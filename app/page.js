@@ -1,10 +1,12 @@
-"use client"
+"use client";
 import {useEffect, useRef} from "react";
 import * as THREE from "three";
 import {OrbitControls} from "three/examples/jsm/controls/OrbitControls";
+import {useRouter} from "next/navigation";
 
 export default function Home() {
 	const mountRef = useRef(null);
+	const router = useRouter();
 
 	useEffect(() => {
 		// Set up scene, camera, and renderer
@@ -52,5 +54,29 @@ export default function Home() {
 		};
 	}, []);
 
-	return <div ref={mountRef} style={{width: "100vw", height: "100vh"}} />;
+	const handlePlayClick = () => {
+		router.push("/game"); // Navigate to the /game route
+	};
+
+	return (
+		<div style={{position: "relative", width: "100vw", height: "100vh"}}>
+			<div ref={mountRef} style={{width: "100%", height: "100%"}} />
+			<button
+				onClick={handlePlayClick}
+				style={{
+					position: "absolute",
+					top: "20px",
+					left: "20px",
+					padding: "10px 20px",
+					fontSize: "16px",
+					cursor: "pointer",
+					backgroundColor: "#00ff00",
+					color: "#000",
+					border: "none",
+					borderRadius: "5px",
+				}}>
+				Play
+			</button>
+		</div>
+	);
 }

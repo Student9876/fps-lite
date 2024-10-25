@@ -13,7 +13,7 @@ export default function GameMap() {
 		const groundLevel = 0;
 		const playerHeight = 0.5;
 
-		const playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, playerHeight, 0.5), new THREE.MeshStandardMaterial({color: 0x0000ff}));
+		const playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, playerHeight, 0.5), new THREE.MeshStandardMaterial({color: 0x00c0aa}));
 		playerBox.position.set(0, playerHeight / 2, 0);
 		scene.add(playerBox);
 
@@ -29,9 +29,26 @@ export default function GameMap() {
 		ground.rotation.x = -Math.PI / 2;
 		scene.add(ground);
 
-		const light = new THREE.DirectionalLight(0xffffff, 1);
-		light.position.set(5, 10, 7.5);
-		scene.add(light);
+		// Add ambient light
+		const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // Soft white light
+		scene.add(ambientLight);
+
+		// Add multiple directional lights
+		const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.5);
+		directionalLight1.position.set(5, 10, 5);
+		scene.add(directionalLight1);
+
+		const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
+		directionalLight2.position.set(-5, 10, -5);
+		scene.add(directionalLight2);
+
+		const directionalLight3 = new THREE.DirectionalLight(0xffffff, 0.5);
+		directionalLight3.position.set(5, 10, -5);
+		scene.add(directionalLight3);
+
+		const directionalLight4 = new THREE.DirectionalLight(0xffffff, 0.5);
+		directionalLight4.position.set(-5, 10, 5);
+		scene.add(directionalLight4);
 
 		const obstacles = [];
 		const cubeColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
@@ -44,7 +61,7 @@ export default function GameMap() {
 		}
 
 		const keys = {w: false, a: false, s: false, d: false};
-		const speed = 0.1;
+		const speed = 10; // Player speed
 		let yaw = 0;
 		let pitch = 0;
 
@@ -65,12 +82,21 @@ export default function GameMap() {
 			return false;
 		};
 
+		let lastTime = performance.now(); // Track time of the last frame
+
 		const animate = () => {
 			requestAnimationFrame(animate);
+
+			const currentTime = performance.now();
+			const deltaTime = (currentTime - lastTime) / 1000; // Convert to seconds
+			lastTime = currentTime;
 
 			const quaternion = new THREE.Quaternion();
 			quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
 			camera.quaternion.copy(quaternion);
+
+			// For rotation of the player box
+			playerBox.rotation.y = yaw;
 
 			const cameraDirection = new THREE.Vector3();
 			camera.getWorldDirection(cameraDirection);
@@ -81,18 +107,18 @@ export default function GameMap() {
 
 			// Player movement logic
 			if (keys.w) {
-				playerBox.position.add(cameraDirection.clone().multiplyScalar(speed));
+				playerBox.position.add(cameraDirection.clone().multiplyScalar(speed * deltaTime));
 			}
 			if (keys.s) {
-				playerBox.position.sub(cameraDirection.clone().multiplyScalar(speed));
+				playerBox.position.sub(cameraDirection.clone().multiplyScalar(speed * deltaTime));
 			}
 			if (keys.a) {
 				const left = new THREE.Vector3().crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize();
-				playerBox.position.sub(left.multiplyScalar(speed));
+				playerBox.position.sub(left.multiplyScalar(speed * deltaTime));
 			}
 			if (keys.d) {
 				const right = new THREE.Vector3().crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize();
-				playerBox.position.add(right.multiplyScalar(speed));
+				playerBox.position.add(right.multiplyScalar(speed * deltaTime));
 			}
 
 			// Collision check for player
@@ -105,21 +131,28 @@ export default function GameMap() {
 			// Update bullet positions
 			for (let i = bullets.length - 1; i >= 0; i--) {
 				const bullet = bullets[i];
-				bullet.position.add(bullet.direction.clone().multiplyScalar(bullet.speed));
-				bullet.distanceTravelled += bullet.speed;
 
-				// Check for collisions with cubes
-				for (const obstacle of obstacles) {
-					const obstacleBB = new THREE.Box3().setFromObject(obstacle);
-					if (obstacleBB.containsPoint(bullet.position) && bullet.distanceTravelled <= 1000) {
-						scene.remove(bullet);
-						bullets.splice(i, 1);
+				// Update bullet position
+				bullet.position.add(bullet.direction.clone().multiplyScalar(bullet.speed * deltaTime));
+				bullet.distanceTravelled += bullet.speed * deltaTime;
+
+				// Check for collisions with cubes using raycasting
+				const raycaster = new THREE.Raycaster(bullet.position, bullet.direction.clone().normalize());
+				const intersects = raycaster.intersectObjects(obstacles);
+
+				// Check if the bullet has intersected with any obstacles
+				if (intersects.length > 0 && bullet.distanceTravelled <= 1000) {
+					// Only increment score if the bullet hasn't scored yet
+					if (!bullet.hasScored) {
 						setScore((prevScore) => prevScore + 1); // Increment score
-						break; // Exit the loop after hitting one cube
+						bullet.hasScored = true; // Mark bullet as having scored
 					}
+
+					// Optional: Add visual feedback for a hit
+					bullet.material.color.set(0xff0000); // Change bullet color to red to indicate hit
 				}
 
-				// Remove the bullet if it travels more than 1000 units
+				// Continue rendering the bullet, or remove if it travels more than 1000 units
 				if (bullet.distanceTravelled > 1000) {
 					scene.remove(bullet);
 					bullets.splice(i, 1);
@@ -173,8 +206,9 @@ export default function GameMap() {
 			bullet.position.copy(camera.position);
 			bullet.direction = new THREE.Vector3();
 			camera.getWorldDirection(bullet.direction);
-			bullet.speed = 0.5; // Set bullet speed
+			bullet.speed = 500; // Set bullet speed (in units per second)
 			bullet.distanceTravelled = 0; // Track distance travelled
+			bullet.hasScored = false; // Flag to track if bullet has scored
 
 			scene.add(bullet);
 			bullets.push(bullet);
@@ -201,7 +235,7 @@ export default function GameMap() {
 	}, []);
 
 	return (
-		<div ref={mountRef} style={{width: "100vw", height: "100vh", position: "relative"}}>
+		<div ref={mountRef} style={{width: "100vw", height: "100vh", overflow: "hidden", margin: "0", position: "relative"}}>
 			{/* Crosshair elements for + shape */}
 			<div style={horizontalLineStyle}></div>
 			<div style={verticalLineStyle}></div>
@@ -217,9 +251,10 @@ const horizontalLineStyle = {
 	top: "50%",
 	left: "50%",
 	transform: "translate(-50%, -50%)",
-	width: "20px", // Adjust for line length
-	height: "2px", // Adjust for line thickness
+	width: "20px",
+	height: "2px",
 	backgroundColor: "white",
+	zIndex: 10,
 };
 
 const verticalLineStyle = {
@@ -227,19 +262,18 @@ const verticalLineStyle = {
 	top: "50%",
 	left: "50%",
 	transform: "translate(-50%, -50%)",
-	height: "20px", // Adjust for line length
-	width: "2px", // Adjust for line thickness
+	width: "2px",
+	height: "20px",
 	backgroundColor: "white",
+	zIndex: 10,
 };
 
-// Score box style
+// Score Box styles
 const scoreBoxStyle = {
 	position: "absolute",
 	top: "10px",
 	right: "10px",
-	backgroundColor: "rgba(0, 0, 0, 0.7)",
 	color: "white",
-	padding: "10px",
-	borderRadius: "5px",
-	fontSize: "18px",
+	fontSize: "24px",
+	zIndex: 10,
 };
