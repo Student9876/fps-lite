@@ -206,7 +206,7 @@ export default function GameMap() {
 			bullet.position.copy(camera.position);
 			bullet.direction = new THREE.Vector3();
 			camera.getWorldDirection(bullet.direction);
-			bullet.speed = 500; // Set bullet speed (in units per second)
+			bullet.speed = 100; // Set bullet speed (in units per second)
 			bullet.distanceTravelled = 0; // Track distance travelled
 			bullet.hasScored = false; // Flag to track if bullet has scored
 
