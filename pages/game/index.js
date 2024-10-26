@@ -8,8 +8,11 @@ export default function GameMap() {
 	const bullets = []; // Array to keep track of active bullets
 
 	useEffect(() => {
+		const windowWidth = window.innerWidth * 0.989;
+		const windowHeight = window.innerHeight * 0.98;
+
 		const scene = new THREE.Scene();
-		const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+		const camera = new THREE.PerspectiveCamera(75, windowWidth / windowHeight, 0.1, 1000);
 		const groundLevel = 0;
 		const playerHeight = 0.5;
 
@@ -20,7 +23,7 @@ export default function GameMap() {
 		camera.position.set(0, groundLevel + playerHeight, 0);
 
 		const renderer = new THREE.WebGLRenderer({antialias: true});
-		renderer.setSize(window.innerWidth, window.innerHeight);
+		renderer.setSize(windowWidth, windowHeight);
 		mountRef.current.appendChild(renderer.domElement);
 
 		const groundGeometry = new THREE.PlaneGeometry(100, 100);
@@ -30,7 +33,7 @@ export default function GameMap() {
 		scene.add(ground);
 
 		// Add ambient light
-		const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // Soft white light
+		const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // Soft white light
 		scene.add(ambientLight);
 
 		// Add multiple directional lights
@@ -83,6 +86,19 @@ export default function GameMap() {
 		};
 
 		let lastTime = performance.now(); // Track time of the last frame
+		const crosshairSize = 0.01;
+		const horizontalCrosshair = new THREE.Mesh(
+			new THREE.PlaneGeometry(crosshairSize * 2, crosshairSize / 2),
+			new THREE.MeshBasicMaterial({color: 0xffffff})
+		);
+		const verticalCrosshair = new THREE.Mesh(new THREE.PlaneGeometry(crosshairSize / 2, crosshairSize * 2), new THREE.MeshBasicMaterial({color: 0xffffff}));
+		horizontalCrosshair.position.z = -1;
+		verticalCrosshair.position.z = -1;
+
+		// Add crosshair parts as child objects of the camera
+		camera.add(horizontalCrosshair);
+		camera.add(verticalCrosshair);
+		scene.add(camera);
 
 		const animate = () => {
 			requestAnimationFrame(animate);
@@ -197,21 +213,26 @@ export default function GameMap() {
 		window.addEventListener("keyup", handleKeyUp);
 
 		// Function to fire a bullet
+		const fireSound = new Audio("/sounds/vandal_1tap.mp3");
+
 		const fireBullet = () => {
 			const bulletGeometry = new THREE.SphereGeometry(0.1, 16, 16);
 			const bulletMaterial = new THREE.MeshStandardMaterial({color: 0xffff00});
 			const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
 
-			// Set bullet initial position and direction
 			bullet.position.copy(camera.position);
 			bullet.direction = new THREE.Vector3();
 			camera.getWorldDirection(bullet.direction);
-			bullet.speed = 100; // Set bullet speed (in units per second)
-			bullet.distanceTravelled = 0; // Track distance travelled
-			bullet.hasScored = false; // Flag to track if bullet has scored
+			bullet.speed = 100;
+			bullet.distanceTravelled = 0;
+			bullet.hasScored = false;
 
 			scene.add(bullet);
 			bullets.push(bullet);
+
+			// Play the fire sound
+			fireSound.currentTime = 0;
+			fireSound.play();
 		};
 
 		// Add event listener for left mouse clicks
@@ -235,44 +256,18 @@ export default function GameMap() {
 	}, []);
 
 	return (
-		<div ref={mountRef} style={{width: "100vw", height: "100vh", overflow: "hidden", margin: "0", position: "relative"}}>
-			{/* Crosshair elements for + shape */}
-			<div style={horizontalLineStyle}></div>
-			<div style={verticalLineStyle}></div>
+		<div ref={mountRef}>
 			{/* Score Box */}
 			<div style={scoreBoxStyle}>Score: {score}</div>
 		</div>
 	);
 }
 
-// Crosshair styles
-const horizontalLineStyle = {
-	position: "absolute",
-	top: "50%",
-	left: "50%",
-	transform: "translate(-50%, -50%)",
-	width: "20px",
-	height: "2px",
-	backgroundColor: "white",
-	zIndex: 10,
-};
-
-const verticalLineStyle = {
-	position: "absolute",
-	top: "50%",
-	left: "50%",
-	transform: "translate(-50%, -50%)",
-	width: "2px",
-	height: "20px",
-	backgroundColor: "white",
-	zIndex: 10,
-};
-
 // Score Box styles
 const scoreBoxStyle = {
 	position: "absolute",
 	top: "10px",
-	right: "10px",
+	left: "10px",
 	color: "white",
 	fontSize: "24px",
 	zIndex: 10,
