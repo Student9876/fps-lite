@@ -1,80 +1,101 @@
 "use client";
 import {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
-import { AudioListener } from "three";
+import {AudioListener} from "three";
 
 export default function TrainingMap() {
 	const mountRef = useRef(null);
 	const [score, setScore] = useState(0); // State to keep track of the score
+	const [sensitivity, setSensitivity] = useState(0.002);
 	const bullets = []; // Array to keep track of active bullets
 	let targetSphere;
 	let spawnSound;
-	
+	const handleShoot = (event) => {
+		if (event.code === "Space") {
+			event.preventDefault(); // Prevent default action to stop page reload
+
+			const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.05, 32, 32), new THREE.MeshStandardMaterial({color: 0x00ff00}));
+			bullet.position.set(camera.position.x, camera.position.y, camera.position.z);
+			bullet.direction = new THREE.Vector3();
+			camera.getWorldDirection(bullet.direction);
+			bullet.speed = 20;
+			bullet.distanceTravelled = 0;
+			bullet.hasScored = false;
+			bullets.push(bullet);
+			scene.add(bullet);
+
+			// Manage sound playback to avoid distortion
+			fireSound.currentTime = 0; // Reset sound to start
+			fireSound.play().catch((error) => {
+				console.error("Error playing sound:", error);
+			});
+		}
+	};
 	useEffect(() => {
 		const windowWidth = window.innerWidth * 0.989;
 		const windowHeight = window.innerHeight * 0.98;
-		
+
 		const scene = new THREE.Scene();
 		const camera = new THREE.PerspectiveCamera(75, windowWidth / windowHeight, 0.1, 1000);
 		const groundLevel = 0;
 		const playerHeight = 0.5;
-		
+
 		const playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, playerHeight, 0.5), new THREE.MeshStandardMaterial({color: 0x00c0aa}));
 		playerBox.position.set(0, playerHeight / 2, 0);
 		scene.add(playerBox);
-		
+
 		camera.position.set(0, groundLevel + playerHeight, 0);
-		
+
 		const renderer = new THREE.WebGLRenderer({antialias: true});
 		renderer.setSize(windowWidth, windowHeight);
 		mountRef.current.appendChild(renderer.domElement);
-		
+
 		// Define room dimensions
 		const wallThickness = 0.5;
 		const wallHeight = 5;
 		const roomWidth = 20;
 		const roomDepth = 20;
-		
+
 		// Create room walls
 		const backWall = new THREE.Mesh(new THREE.BoxGeometry(roomWidth, wallHeight, wallThickness), new THREE.MeshStandardMaterial({color: 0xffffff}));
 		backWall.position.set(0, wallHeight / 2, -roomDepth / 2);
 		scene.add(backWall);
-		
+
 		const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, wallHeight, roomDepth), new THREE.MeshStandardMaterial({color: 0xffffff}));
 		leftWall.position.set(-roomWidth / 2, wallHeight / 2, 0);
 		scene.add(leftWall);
-		
+
 		const rightWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, wallHeight, roomDepth), new THREE.MeshStandardMaterial({color: 0xffffff}));
 		rightWall.position.set(roomWidth / 2, wallHeight / 2, 0);
 		scene.add(rightWall);
-		
+
 		// Floor
 		const ground = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), new THREE.MeshStandardMaterial({color: 0x888888}));
 		ground.rotation.x = -Math.PI / 2;
 		ground.position.y = 0;
 		scene.add(ground);
-		
+
 		// Add ambient light
 		const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // Soft white light
 		scene.add(ambientLight);
-		
+
 		// Add multiple directional lights
 		const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.5);
 		directionalLight1.position.set(5, 10, 5);
 		scene.add(directionalLight1);
-		
+
 		const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
 		directionalLight2.position.set(-5, 10, -5);
 		scene.add(directionalLight2);
-		
+
 		const directionalLight3 = new THREE.DirectionalLight(0xffffff, 0.5);
 		directionalLight3.position.set(5, 10, -5);
 		scene.add(directionalLight3);
-		
+
 		const directionalLight4 = new THREE.DirectionalLight(0xffffff, 0.5);
 		directionalLight4.position.set(-5, 10, 5);
 		scene.add(directionalLight4);
-		
+
 		// Track time for FPS-independent movement
 		let lastTime = performance.now();
 		const crosshairSize = 0.01;
@@ -85,12 +106,12 @@ export default function TrainingMap() {
 		const verticalCrosshair = new THREE.Mesh(new THREE.PlaneGeometry(crosshairSize / 2, crosshairSize * 2), new THREE.MeshBasicMaterial({color: 0xffffff}));
 		horizontalCrosshair.position.z = -1;
 		verticalCrosshair.position.z = -1;
-		
+
 		// Add crosshair parts as child objects of the camera
 		camera.add(horizontalCrosshair);
 		camera.add(verticalCrosshair);
 		scene.add(camera);
-		
+
 		// Sound for target spawning
 		// const listener = new AudioListener();
 		// spawnSound = new THREE.PositionalAudio(listener);
@@ -110,7 +131,7 @@ export default function TrainingMap() {
 
 			const randomHeight = 1 + Math.random() * (wallHeight - 2); // Minimum height of 1, max near ceiling
 			targetSphere.position.set((Math.random() - 0.5) * (roomWidth - 1), randomHeight, (Math.random() - 0.5) * (roomDepth - 5));
-			
+
 			// Attach sound to target position for spatial audio
 			// spawnSound.position.copy(targetSphere.position);
 			// spawnSound.play();
@@ -125,8 +146,8 @@ export default function TrainingMap() {
 		let pitch = 0;
 
 		const handleMouseMove = (event) => {
-			yaw -= event.movementX * 0.002;
-			pitch -= event.movementY * 0.002;
+			yaw -= event.movementX * sensitivity/10;
+			pitch -= event.movementY * sensitivity/10;
 			pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
 		};
 
@@ -243,13 +264,42 @@ export default function TrainingMap() {
 
 		window.addEventListener("click", fireBullet);
 
+		// Slider for sensitivity
+		const sliderContainer = document.createElement("div");
+		sliderContainer.style.position = "absolute";
+		sliderContainer.style.top = "20px";
+		sliderContainer.style.right = "20px";
+		sliderContainer.style.zIndex = 1;
+		sliderContainer.style.color = "white";
+
+		const sliderLabel = document.createElement("label");
+		sliderLabel.textContent = "Mouse Sensitivity:";
+		sliderContainer.appendChild(sliderLabel);
+
+		const slider = document.createElement("input");
+		slider.type = "range";
+		slider.min = "0.001";
+		slider.max = "0.01";
+		slider.step = "0.001";
+		slider.value = sensitivity; // Set initial sensitivity value
+		slider.style.display = "block"; // Make the slider block display for better UI
+		sliderContainer.appendChild(slider);
+
+		slider.addEventListener("input", () => {
+			setSensitivity(parseFloat(slider.value)); // Update sensitivity based on slider value
+		});
+
+		document.body.appendChild(sliderContainer);
+
 		return () => {
+			mountRef.current.removeChild(renderer.domElement);
 			document.removeEventListener("pointerlockchange", handlePointerLockChange);
 			window.removeEventListener("keydown", handleKeyDown);
 			window.removeEventListener("keyup", handleKeyUp);
-			window.removeEventListener("click", fireBullet);
+			window.removeEventListener("keydown", handleShoot);
+			document.body.removeChild(sliderContainer); // Clean up the slider on unmount
 		};
-	}, []);
+	}, [sensitivity]);
 
 	return (
 		<div ref={mountRef}>
