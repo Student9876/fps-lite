@@ -54,17 +54,17 @@ export default function Home() {
 		};
 	}, []);
 
-	const handlePlayClick = () => {
-		router.push("/game"); // Navigate to the /game route
+	const handlePlayClick = (type) => {
+		router.push(`/${type}`); // Navigate to the /game route
 	};
 
 	return (
 		<div style={{position: "relative", width: "100vw", height: "100vh"}}>
 			<div ref={mountRef} style={{width: "100%", height: "100%"}} />
 			<button
-				onClick={handlePlayClick}
+				onClick={e => handlePlayClick("game")}
 				style={{
-					position: "absolute",
+					position: "fixed",
 					top: "20px",
 					left: "20px",
 					padding: "10px 20px",
@@ -76,6 +76,23 @@ export default function Home() {
 					borderRadius: "5px",
 				}}>
 				Play
+			</button>
+			<br />
+			<button
+				onClick={e=> handlePlayClick("training")}
+				style={{
+					position: "fixed",
+					top: "80px",
+					left: "20px",
+					padding: "10px 20px",
+					fontSize: "16px",
+					cursor: "pointer",
+					backgroundColor: "#00ff00",
+					color: "#000",
+					border: "none",
+					borderRadius: "5px",
+				}}>
+				Training
 			</button>
 		</div>
 	);
