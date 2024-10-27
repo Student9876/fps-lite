@@ -7,6 +7,8 @@ export default function GameMap() {
 	const [score, setScore] = useState(0); // State to keep track of the score
 	const bullets = []; // Array to keep track of active bullets
 	const errorFactor = 0.1;
+	const jumpHeight = 2; // Height of the jump
+	const gravity = -9.81; // Gravity value
 
 	useEffect(() => {
 		const windowWidth = window.innerWidth * 0.989;
@@ -64,10 +66,12 @@ export default function GameMap() {
 			obstacles.push(cube);
 		}
 
-		const keys = {w: false, a: false, s: false, d: false};
-		const speed = 10; // Player speed
+		const keys = {w: false, a: false, s: false, d: false, space: false}; // Added space key
+		const speed = 10;
 		let yaw = 0;
 		let pitch = 0;
+		let isJumping = false; // Jump state
+		let jumpVelocity = 0; // Current jump velocity
 
 		const handleMouseMove = (event) => {
 			yaw -= event.movementX * 0.002;
@@ -139,6 +143,22 @@ export default function GameMap() {
 				playerBox.position.add(right.multiplyScalar(speed * deltaTime));
 			}
 
+			if (keys.space && !isJumping) {
+				isJumping = true;
+				jumpVelocity = Math.sqrt(jumpHeight * -2 * gravity); // Initial jump velocity
+			}
+
+			if (isJumping) {
+				playerBox.position.y += jumpVelocity * deltaTime; // Move up
+				jumpVelocity += gravity * deltaTime; // Apply gravity
+				if (playerBox.position.y <= groundLevel + playerHeight / 2) {
+					// Check if the player hits the ground
+					playerBox.position.y = groundLevel + playerHeight / 2; // Reset to ground level
+					isJumping = false; // Reset jump state
+					jumpVelocity = 0; // Reset jump velocity
+				}
+			}
+
 			// Collision check for player
 			if (checkCollision(playerBox.position)) {
 				playerBox.position.copy(previousPosition);
@@ -189,6 +209,7 @@ export default function GameMap() {
 			if (e.key === "a") keys.a = true;
 			if (e.key === "s") keys.s = true;
 			if (e.key === "d") keys.d = true;
+			if (e.key === " ") keys.space = true; // Space key for jumping
 		};
 
 		const handleKeyUp = (e) => {
@@ -196,6 +217,7 @@ export default function GameMap() {
 			if (e.key === "a") keys.a = false;
 			if (e.key === "s") keys.s = false;
 			if (e.key === "d") keys.d = false;
+			if (e.key === " ") keys.space = false; // Reset space key on release
 		};
 
 		// Enable pointer lock on click
