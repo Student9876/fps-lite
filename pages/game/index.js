@@ -6,6 +6,7 @@ export default function GameMap() {
 	const mountRef = useRef(null);
 	const [score, setScore] = useState(0); // State to keep track of the score
 	const bullets = []; // Array to keep track of active bullets
+	const errorFactor = 0.1;
 
 	useEffect(() => {
 		const windowWidth = window.innerWidth * 0.989;
@@ -86,6 +87,7 @@ export default function GameMap() {
 		};
 
 		let lastTime = performance.now(); // Track time of the last frame
+
 		const crosshairSize = 0.01;
 		const horizontalCrosshair = new THREE.Mesh(
 			new THREE.PlaneGeometry(crosshairSize * 2, crosshairSize / 2),
@@ -162,16 +164,18 @@ export default function GameMap() {
 					if (!bullet.hasScored) {
 						setScore((prevScore) => prevScore + 1); // Increment score
 						bullet.hasScored = true; // Mark bullet as having scored
+						console.log("Hit");
 					}
 
 					// Optional: Add visual feedback for a hit
-					bullet.material.color.set(0xff0000); // Change bullet color to red to indicate hit
+					// bullet.material.color.set(0xff0000); // Change bullet color to red to indicate hit
 				}
 
 				// Continue rendering the bullet, or remove if it travels more than 1000 units
 				if (bullet.distanceTravelled > 1000) {
 					scene.remove(bullet);
 					bullets.splice(i, 1);
+					console.log("Miss");
 				}
 			}
 
@@ -221,9 +225,26 @@ export default function GameMap() {
 			const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
 
 			bullet.position.copy(camera.position);
-			bullet.direction = new THREE.Vector3();
-			camera.getWorldDirection(bullet.direction);
+			const bulletDirection = new THREE.Vector3();
+			camera.getWorldDirection(bulletDirection);
 			bullet.speed = 100;
+
+			if ((keys.w && keys.s) || (keys.a && keys.d)) {
+				bulletDirection.x += (Math.random() - 0.5) * 0;
+				bulletDirection.y += (Math.random() - 0.5) * 0;
+				bulletDirection.z += (Math.random() - 0.5) * 0;
+			} else if (keys.w || keys.a || keys.s || keys.d) {
+				bulletDirection.x += (Math.random() - 0.5) * errorFactor;
+				bulletDirection.y += (Math.random() - 0.5) * errorFactor;
+				bulletDirection.z += (Math.random() - 0.5) * errorFactor;
+			} else {
+				bulletDirection.x += (Math.random() - 0.5) * 0;
+				bulletDirection.y += (Math.random() - 0.5) * 0;
+				bulletDirection.z += (Math.random() - 0.5) * 0;
+			}
+
+			bulletDirection.normalize();
+			bullet.direction = bulletDirection;
 			bullet.distanceTravelled = 0;
 			bullet.hasScored = false;
 
