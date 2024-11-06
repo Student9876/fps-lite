@@ -10,6 +10,12 @@ export default function GameMap() {
 	const jumpHeight = 2; // Height of the jump
 	const gravity = -9.81; // Gravity value
 
+	const acceleration_ground = 2.0; // Adjust for desired acceleration rate
+	const maxSpeed = 10; // Maximum speed
+	const friction_ground = 0.82; // Adjust for desired slowing rate (e.g., between 0.8 to 0.99)
+	const velocity = new THREE.Vector3(0, 0, 0); // Initialize velocity for the player
+	const [playerSpeed, setPlayerSpeed] = useState(0); // State to keep track of the player speed
+
 	useEffect(() => {
 		const windowWidth = window.innerWidth * 0.989;
 		const windowHeight = window.innerHeight * 0.98;
@@ -125,28 +131,45 @@ export default function GameMap() {
 			cameraDirection.y = 0;
 			cameraDirection.normalize();
 
+			// Apply the velocity to player position
 			const previousPosition = playerBox.position.clone();
+			playerBox.position.add(velocity.clone().multiplyScalar(deltaTime));
+			// const previousPosition = playerBox.position.clone();
 
 			// Player movement logic
-			if (keys.w) {
-				playerBox.position.add(cameraDirection.clone().multiplyScalar(speed * deltaTime));
+			if (keys.w && !isJumping) {
+				velocity.add(camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize().multiplyScalar(acceleration_ground));
 			}
-			if (keys.s) {
-				playerBox.position.sub(cameraDirection.clone().multiplyScalar(speed * deltaTime));
+			if (keys.s && !isJumping) {
+				velocity.add(camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize().multiplyScalar(-acceleration_ground));
 			}
-			if (keys.a) {
-				const left = new THREE.Vector3().crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize();
-				playerBox.position.sub(left.multiplyScalar(speed * deltaTime));
+			if (keys.a && !isJumping) {
+				const left = new THREE.Vector3()
+					.crossVectors(camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize(), new THREE.Vector3(0, 1, 0))
+					.normalize();
+				velocity.add(left.multiplyScalar(-acceleration_ground));
 			}
-			if (keys.d) {
-				const right = new THREE.Vector3().crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize();
-				playerBox.position.add(right.multiplyScalar(speed * deltaTime));
+			if (keys.d && !isJumping) {
+				const right = new THREE.Vector3()
+					.crossVectors(new THREE.Vector3(0, 1, 0), camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize())
+					.normalize();
+				velocity.add(right.multiplyScalar(-acceleration_ground));
 			}
 
 			if (keys.space && !isJumping) {
 				isJumping = true;
 				jumpVelocity = Math.sqrt(jumpHeight * -2 * gravity); // Initial jump velocity
 			}
+
+			// Apply friction_ground
+			if (!isJumping) velocity.multiplyScalar(friction_ground);
+
+			// Limit speed to maxSpeed
+			if (velocity.length() > maxSpeed && !isJumping) {
+				velocity.setLength(maxSpeed);
+			}
+
+			if (velocity.length() < 0.5) velocity.set(0, 0, 0);
 
 			if (isJumping) {
 				playerBox.position.y += jumpVelocity * deltaTime; // Move up
@@ -199,12 +222,16 @@ export default function GameMap() {
 				}
 			}
 
+			// Update player speed
+			setPlayerSpeed(velocity.length());
+
 			renderer.render(scene, camera);
 		};
 		animate();
 
 		// Event listeners for key presses
 		const handleKeyDown = (e) => {
+			console.log(velocity.length());
 			if (e.key === "w") keys.w = true;
 			if (e.key === "a") keys.a = true;
 			if (e.key === "s") keys.s = true;
@@ -301,7 +328,11 @@ export default function GameMap() {
 	return (
 		<div ref={mountRef}>
 			{/* Score Box */}
-			<div style={scoreBoxStyle}>Score: {score}</div>
+			<div className="">
+				<div style={scoreBoxStyle}>
+					Score: {score} <br /> Player speed: {playerSpeed}
+				</div>
+			</div>
 		</div>
 	);
 }
