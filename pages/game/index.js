@@ -71,17 +71,17 @@ class Player {
 
 		// Player movement logic
 		if (this.keys.w && !this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(2.0));
-		if (this.keys.w && this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(0.2));
+		if (this.keys.w && this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(0.145));
 		if (this.keys.s && !this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(-2.0));
-		if (this.keys.s && this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(-0.2));
+		if (this.keys.s && this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(-0.145));
 		if (this.keys.a && !this.isJumping)
 			this.velocity.add(new THREE.Vector3().crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(-2.0));
 		if (this.keys.a && this.isJumping)
-			this.velocity.add(new THREE.Vector3().crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(-0.2));
+			this.velocity.add(new THREE.Vector3().crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(-0.145));
 		if (this.keys.d && !this.isJumping)
 			this.velocity.add(new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection).normalize().multiplyScalar(-2.0));
 		if (this.keys.d && this.isJumping)
-			this.velocity.add(new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection).normalize().multiplyScalar(-0.2));
+			this.velocity.add(new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection).normalize().multiplyScalar(-0.145));
 
 		// Jump logic
 		if (this.keys.space && !this.isJumping) {
@@ -101,14 +101,14 @@ class Player {
 			}
 		}
 		// Apply friction if not jumping
-		if (!this.isJumping) this.velocity.multiplyScalar(0.82);
-		if (this.isJumping) this.velocity.multiplyScalar(0.99);
+		if (!this.isJumping) this.velocity.multiplyScalar(0.85);
+		if (this.isJumping) this.velocity.multiplyScalar(0.99999);
 		// this.velocity.multiplyScalar(0.99);
 
 
 		// Limit speed
 		if (this.velocity.length() > 10 && !this.isJumping) this.velocity.setLength(10);
-		if (this.velocity.length() > 16 && this.isJumping) this.velocity.setLength(16);
+		if (this.velocity.length() > 14 && this.isJumping) this.velocity.setLength(14);
 		if (this.velocity.length() < 0.2) this.velocity.set(0, 0, 0);
 		// Apply velocity to player position
 		this.playerBox.position.add(this.velocity.clone().multiplyScalar(deltaTime));
