@@ -225,8 +225,40 @@ export default function GameMap() {
 		renderer.setSize(windowWidth, windowHeight);
 		mountRef.current.appendChild(renderer.domElement);
 
-		const groundGeometry = new THREE.PlaneGeometry(100, 100);
-		const groundMaterial = new THREE.MeshStandardMaterial({color: 0x888888});
+		// const groundGeometry = new THREE.PlaneGeometry(100, 100);
+		// const groundMaterial = new THREE.MeshStandardMaterial({color: 0x888888});
+		// const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+		// ground.rotation.x = -Math.PI / 2;
+		// scene.add(ground);
+
+		// Create checkerboard texture
+		const size = 100;
+		const segments = 100;
+		const groundGeometry = new THREE.PlaneGeometry(size, size, segments, segments);
+
+		// Create a canvas for the texture
+		const canvas = document.createElement("canvas");
+		canvas.width = 2;
+		canvas.height = 2;
+		const context = canvas.getContext("2d");
+
+		// Draw checkerboard pattern
+		context.fillStyle = "white";
+		context.fillRect(0, 0, 2, 2);
+		context.fillStyle = "black";
+		context.fillRect(0, 0, 1, 1);
+		context.fillRect(1, 1, 1, 1);
+
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.wrapS = THREE.RepeatWrapping;
+		texture.wrapT = THREE.RepeatWrapping;
+		texture.repeat.set(50, 50); // Adjust this value to change the size of the squares
+
+		const groundMaterial = new THREE.MeshStandardMaterial({
+			map: texture,
+			side: THREE.DoubleSide,
+		});
+
 		const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 		ground.rotation.x = -Math.PI / 2;
 		scene.add(ground);
