@@ -26,83 +26,79 @@
 // app.listen(PORT, () => {
 // 	console.log(`Server is running on http://localhost:${PORT}`);
 // });
-
+// server.js
 const express = require("express");
-const http = require("http");
+const {createServer} = require("http");
 const {Server} = require("socket.io");
-const {v4: uuidv4} = require("uuid");
+const cors = require("cors");
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
+app.use(cors());
+
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
 	cors: {
-		origin: "*",
+		origin: process.env.ALLOWED_ORIGINS?.split(",") || ["http://localhost:3000"],
 		methods: ["GET", "POST"],
 	},
 });
 
-// Store connected players
 const players = new Map();
 
 io.on("connection", (socket) => {
-	console.log("A player connected");
+	const playerId = socket.id;
+	const playerColor = Math.random() * 0xffffff;
 
-	// Generate unique ID for the player
-	const playerId = uuidv4();
-
-	// Initialize player
+	// Add player to players map
 	players.set(playerId, {
 		id: playerId,
+		color: playerColor,
 		position: {x: 0, y: 1, z: 0},
 		rotation: {yaw: 0, pitch: 0},
-		color: "#" + Math.floor(Math.random() * 16777215).toString(16), // Random color
 	});
 
-	// Send current player ID and existing players to the new player
+	// Send initial player data
 	socket.emit("playerInit", {
 		playerId,
 		players: Array.from(players.values()),
 	});
 
-	// Broadcast new player to all other players
-	socket.broadcast.emit("playerJoined", players.get(playerId));
+	// Broadcast new player to others
+	socket.broadcast.emit("playerJoined", {
+		id: playerId,
+		color: playerColor,
+		position: {x: 0, y: 1, z: 0},
+		rotation: {yaw: 0, pitch: 0},
+	});
 
-	// Handle player movement updates
-	socket.on("playerMove", (data) => {
-		const player = players.get(data.playerId);
+	socket.on("playerMove", ({position, rotation}) => {
+		const player = players.get(playerId);
 		if (player) {
-			player.position = data.position;
-			player.rotation = data.rotation;
+			player.position = position;
+			player.rotation = rotation;
 			socket.broadcast.emit("playerMoved", {
-				playerId: data.playerId,
-				position: data.position,
-				rotation: data.rotation,
+				playerId,
+				position,
+				rotation,
 			});
 		}
 	});
 
-	// Handle shooting
-	socket.on("playerShoot", (data) => {
+	socket.on("playerShoot", ({position, direction}) => {
 		socket.broadcast.emit("bulletFired", {
-			playerId: data.playerId,
-			position: data.position,
-			direction: data.direction,
+			playerId,
+			position,
+			direction,
 		});
 	});
 
-	// Handle disconnection
 	socket.on("disconnect", () => {
-		console.log("A player disconnected");
 		players.delete(playerId);
 		io.emit("playerLeft", playerId);
 	});
 });
 
-app.get("/", (req, res) => {
-	res.send("Game server running");
-});
-
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-	console.log(`Game server running on port ${PORT}`);
+httpServer.listen(PORT, () => {
+	console.log(`Server running on port ${PORT}`);
 });
