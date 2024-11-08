@@ -16,7 +16,10 @@
     "phaser": "^3.86.0",
     "react": "19.0.0-rc-69d4b800-20241021",
     "react-dom": "19.0.0-rc-69d4b800-20241021",
-    "three": "^0.169.0"
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "three": "^0.169.0",
+    "uuid": "^11.0.2"
   },
   "devDependencies": {
     "concurrently": "^9.0.1",

@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
+import io from "socket.io-client";
 
 class Player {
 	constructor(scene, camera, groundLevel = 0, playerHeight) {
@@ -105,7 +106,6 @@ class Player {
 		if (this.isJumping) this.velocity.multiplyScalar(0.99999);
 		// this.velocity.multiplyScalar(0.99);
 
-
 		// Limit speed
 		if (this.velocity.length() > 10 && !this.isJumping) this.velocity.setLength(10);
 		if (this.velocity.length() > 14 && this.isJumping) this.velocity.setLength(14);
@@ -176,14 +176,38 @@ class Bullet {
 	}
 }
 
+class RemotePlayer {
+	constructor(scene, id, color, position) {
+		this.id = id;
+		this.playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.5), new THREE.MeshStandardMaterial({color}));
+		this.playerBox.position.copy(position);
+		scene.add(this.playerBox);
+	}
+
+	update(position, rotation) {
+		this.playerBox.position.copy(position);
+		this.playerBox.rotation.y = rotation.yaw;
+	}
+
+	remove(scene) {
+		scene.remove(this.playerBox);
+	}
+}
+
 export default function GameMap() {
 	const mountRef = useRef(null);
 	const [score, setScore] = useState(0);
 	const [playerSpeed, setPlayerSpeed] = useState(0);
 	const [bullets, setBullets] = useState([]);
-	const [fps, setFps] = useState(0); // New state for FPS
+	const [fps, setFps] = useState(0);
+	const socketRef = useRef(null);
+	const playerRef = useRef(null);
+	const remotePlayersRef = useRef(new Map());
+	const sceneRef = useRef(null);
 
 	useEffect(() => {
+		socketRef.current = io("http://localhost:3001");
+
 		const windowWidth = window.innerWidth * 0.989;
 		const windowHeight = window.innerHeight * 0.98;
 
@@ -215,34 +239,40 @@ export default function GameMap() {
 		const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
 		directionalLight2.position.set(-5, 10, -5);
 		scene.add(directionalLight2);
-		
+
 		const directionalLight3 = new THREE.DirectionalLight(0xffffff, 0.5);
 		directionalLight3.position.set(5, 10, -5);
 		scene.add(directionalLight3);
-		
+
 		const directionalLight4 = new THREE.DirectionalLight(0xffffff, 0.5);
 		directionalLight4.position.set(-5, 10, 5);
 		scene.add(directionalLight4);
-		
+
 		const obstacles = [];
 		const cubeColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
-		for (let i = 0; i < 100; i++) {
-			const color = cubeColors[i % cubeColors.length];
-			const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({color}));
-			cube.position.set((Math.random() - 0.5) * 100, 0.5, (Math.random() - 0.5) * 100);
-			scene.add(cube);
-			obstacles.push(cube);
-		}
-		
+		// for (let i = 0; i < 100; i++) {
+		// 	const color = cubeColors[i % cubeColors.length];
+		// 	const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({color}));
+		// 	cube.position.set((Math.random() - 0.5) * 100, 0.5, (Math.random() - 0.5) * 100);
+		// 	scene.add(cube);
+		// 	obstacles.push(cube);
+		// }
+
 		const fireSound = new Audio("/sounds/vandal_1tap.mp3");
-		
+
 		const fireBullet = () => {
 			const bullet = new Bullet(scene, camera);
 			bullets.push(bullet);
 			fireSound.currentTime = 0;
 			fireSound.play();
+
+			socketRef.current.emit("playerShoot", {
+				playerId: player.id,
+				position: bullet.bullet.position.clone(),
+				direction: bullet.direction.clone(),
+			});
 		};
-		
+
 		const handlePointerLockChange = () => {
 			if (document.pointerLockElement === renderer.domElement) {
 				document.addEventListener("mousemove", player.handleMouseMove);
@@ -250,15 +280,15 @@ export default function GameMap() {
 				document.removeEventListener("mousemove", player.handleMouseMove);
 			}
 		};
-		
+
 		const enablePointerLock = () => {
 			renderer.domElement.requestPointerLock();
 		};
-		
+
 		let lastTime = performance.now();
 		let frameCount = 0;
 		let lastFpsUpdateTime = lastTime;
-		
+
 		const crosshairSize = 0.01;
 		const horizontalCrosshair = new THREE.Mesh(
 			new THREE.PlaneGeometry(crosshairSize * 2, crosshairSize / 2),
@@ -267,15 +297,90 @@ export default function GameMap() {
 		const verticalCrosshair = new THREE.Mesh(new THREE.PlaneGeometry(crosshairSize / 2, crosshairSize * 2), new THREE.MeshBasicMaterial({color: 0xffffff}));
 		horizontalCrosshair.position.z = -1;
 		verticalCrosshair.position.z = -1;
-		
+
 		// Add crosshair parts as child objects of the camera
 		camera.add(horizontalCrosshair);
 		camera.add(verticalCrosshair);
-		
+
 		setFps(frameCount);
+
+		const originalUpdate = player.update;
+
+		// Then, create a new update method that:
+		// a) First calls the original update method
+		// b) Then sends the position to other players
+		player.update = function (deltaTime, obstacles, setScore, setPlayerSpeed) {
+			// Call the original update method first
+			// 'this' refers to the player instance
+			originalUpdate.call(this, deltaTime, obstacles, setScore, setPlayerSpeed);
+
+			// After original update completes, send the new position to server
+			socketRef.current.emit("playerMove", {
+				playerId: this.id,
+				position: this.playerBox.position, // Current position after movement
+				rotation: {
+					yaw: this.yaw, // Current horizontal rotation
+					pitch: this.pitch, // Current vertical rotation
+				},
+			});
+		};
+
+		socketRef.current.on("playerInit", ({playerId, players}) => {
+			player.id = playerId;
+
+			// Create remote players
+			players.forEach((remotePlayer) => {
+				if (remotePlayer.id !== playerId) {
+					const newPlayer = new RemotePlayer(
+						scene,
+						remotePlayer.id,
+						remotePlayer.color,
+						new THREE.Vector3(remotePlayer.position.x, remotePlayer.position.y, remotePlayer.position.z)
+					);
+					remotePlayersRef.current.set(remotePlayer.id, newPlayer);
+				}
+			});
+		});
+
+		socketRef.current.on("playerJoined", (remotePlayer) => {
+			if (remotePlayer.id !== player.id) {
+				const newPlayer = new RemotePlayer(
+					scene,
+					remotePlayer.id,
+					remotePlayer.color,
+					new THREE.Vector3(remotePlayer.position.x, remotePlayer.position.y, remotePlayer.position.z)
+				);
+				remotePlayersRef.current.set(remotePlayer.id, newPlayer);
+			}
+		});
+
+		socketRef.current.on("playerMoved", ({playerId, position, rotation}) => {
+			const remotePlayer = remotePlayersRef.current.get(playerId);
+			if (remotePlayer) {
+				remotePlayer.update(new THREE.Vector3(position.x, position.y, position.z), rotation);
+			}
+		});
+
+		socketRef.current.on("playerLeft", (playerId) => {
+			const remotePlayer = remotePlayersRef.current.get(playerId);
+			if (remotePlayer) {
+				remotePlayer.remove(scene);
+				remotePlayersRef.current.delete(playerId);
+			}
+		});
+
+		socketRef.current.on("bulletFired", ({playerId, position, direction}) => {
+			if (playerId !== player.id) {
+				const bullet = new Bullet(scene, camera);
+				bullet.bullet.position.copy(position);
+				bullet.direction.copy(direction);
+				bullets.push(bullet);
+			}
+		});
+
 		const animate = () => {
 			requestAnimationFrame(animate);
-			
+
 			const currentTime = performance.now();
 			const deltaTime = (currentTime - lastTime) / 1000;
 			lastTime = currentTime;
@@ -315,6 +420,7 @@ export default function GameMap() {
 		animate();
 
 		return () => {
+			socketRef.current.disconnect();
 			if (mountRef.current) {
 				mountRef.current.removeChild(renderer.domElement);
 			}
