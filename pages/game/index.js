@@ -206,7 +206,10 @@ export default function GameMap() {
 	const sceneRef = useRef(null);
 
 	useEffect(() => {
-		socketRef.current = io("https://fps-lite-server.onrender.com/");
+		socketRef.current = io("https://fps-lite-server.onrender.com", {
+			withCredentials: true,
+			transports: ["websocket", "polling"],
+		});
 
 		const windowWidth = window.innerWidth * 0.989;
 		const windowHeight = window.innerHeight * 0.98;
