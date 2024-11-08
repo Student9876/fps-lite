@@ -98,6 +98,10 @@ io.on("connection", (socket) => {
 	});
 });
 
+app.get("/", (req, res) => {
+	res.send("Game server running");
+});
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
 	console.log(`Game server running on port ${PORT}`);
