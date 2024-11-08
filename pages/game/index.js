@@ -206,7 +206,7 @@ export default function GameMap() {
 	const sceneRef = useRef(null);
 
 	useEffect(() => {
-		socketRef.current = io("http://localhost:3001");
+		socketRef.current = io("https://a8a2-2409-40c4-309-774f-98b5-e285-f750-24.ngrok-free.app/");
 
 		const windowWidth = window.innerWidth * 0.989;
 		const windowHeight = window.innerHeight * 0.98;
