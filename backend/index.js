@@ -96,6 +96,18 @@ io.on("connection", (socket) => {
 		players.delete(playerId);
 		io.emit("playerLeft", playerId);
 	});
+
+	socket.on("playerHit", ({hitPlayerId, shooterId}) => {
+		io.to(hitPlayerId).emit("playerHit", {hitPlayerId, shooterId});
+	});
+
+	socket.on("playerDied", ({playerId, killerId}) => {
+		io.emit("playerDied", {playerId, killerId});
+	});
+
+	socket.on("playerRespawned", ({playerId, position}) => {
+		io.emit("playerRespawned", {playerId, position});
+	});
 });
 
 const PORT = process.env.PORT || 3001;

@@ -31,6 +31,43 @@ class Player {
 		this.pitch = 0;
 
 		this.scene = scene;
+
+		this.isDead = false;
+		this.respawnTime = 3000; // 3 seconds
+		this.spawnPoints = [
+			new THREE.Vector3(0, groundLevel + playerHeight / 2, 0),
+			new THREE.Vector3(10, groundLevel + playerHeight / 2, 10),
+			new THREE.Vector3(-10, groundLevel + playerHeight / 2, -10),
+			new THREE.Vector3(10, groundLevel + playerHeight / 2, -10),
+			new THREE.Vector3(-10, groundLevel + playerHeight / 2, 10),
+		];
+	}
+
+	die() {
+		if (this.isDead) return;
+
+		this.isDead = true;
+		this.playerBox.material.transparent = true;
+		this.playerBox.material.opacity = 0;
+
+		// Disable movement while dead
+		this.velocity.set(0, 0, 0);
+
+		// Start respawn timer
+		setTimeout(() => this.respawn(), this.respawnTime);
+	}
+	respawn() {
+		// Choose random spawn point
+		const spawnPoint = this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)];
+
+		// Reset position and properties
+		this.playerBox.position.copy(spawnPoint);
+		this.camera.position.set(spawnPoint.x, spawnPoint.y + this.playerHeight / 2, spawnPoint.z);
+
+		// Reset visuals
+		this.playerBox.material.opacity = 1;
+		this.isDead = false;
+		this.velocity.set(0, 0, 0);
 	}
 
 	handleKeyDown = (e) => {
@@ -63,6 +100,7 @@ class Player {
 	};
 
 	update(deltaTime, obstacles, setScore, setPlayerSpeed) {
+		if (this.isDead) return;
 		const cameraDirection = new THREE.Vector3();
 		this.camera.getWorldDirection(cameraDirection);
 		cameraDirection.y = 0;
@@ -181,6 +219,7 @@ class RemotePlayer {
 		this.id = id;
 		this.playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.5), new THREE.MeshStandardMaterial({color}));
 		this.playerBox.position.copy(position);
+		this.isDead = false;
 		scene.add(this.playerBox);
 	}
 
@@ -191,6 +230,17 @@ class RemotePlayer {
 
 	remove(scene) {
 		scene.remove(this.playerBox);
+	}
+
+	die() {
+		this.isDead = true;
+		this.playerBox.material.opacity = 0;
+	}
+
+	respawn(position) {
+		this.isDead = false;
+		this.playerBox.material.opacity = 1;
+		this.playerBox.position.copy(position);
 	}
 }
 
@@ -413,31 +463,53 @@ export default function GameMap() {
 			}
 		});
 
+		socketRef.current.on("playerHit", ({hitPlayerId, shooterId}) => {
+			if (hitPlayerId === player.id) {
+				// Local player was hit
+				player.die();
+				socketRef.current.emit("playerDied", {
+					playerId: player.id,
+					killerId: shooterId,
+				});
+			} else {
+				// Remote player was hit
+				const remotePlayer = remotePlayersRef.current.get(hitPlayerId);
+				if (remotePlayer) {
+					remotePlayer.die();
+				}
+			}
+		});
+
+		socketRef.current.on("playerDied", ({playerId, killerId}) => {
+			const remotePlayer = remotePlayersRef.current.get(playerId);
+			if (remotePlayer) {
+				remotePlayer.die();
+			}
+		});
+
+		socketRef.current.on("playerRespawned", ({playerId, position}) => {
+			const remotePlayer = remotePlayersRef.current.get(playerId);
+			if (remotePlayer) {
+				remotePlayer.respawn(new THREE.Vector3(position.x, position.y, position.z));
+			}
+		});
+
 		const animate = () => {
 			requestAnimationFrame(animate);
-
 			const currentTime = performance.now();
 			const deltaTime = (currentTime - lastTime) / 1000;
 			lastTime = currentTime;
 
-			player.update(deltaTime, obstacles, setScore, setPlayerSpeed);
+			if (!player.isDead) {
+				player.update(deltaTime, obstacles, setScore, setPlayerSpeed);
+			}
 
 			bullets.forEach((bullet, index) => {
-				bullet.update(deltaTime, obstacles, setScore);
-				if (bullet.distanceTravelled > 1000) {
-					bullet.scene.remove(bullet.bullet);
+				bullet.update(deltaTime, obstacles, remotePlayersRef.current, setScore, socketRef.current);
+				if (bullet.distanceTravelled > 1000 || bullet.hasHit) {
 					bullets.splice(index, 1);
 				}
 			});
-
-			// Calculate FPS
-			frameCount++;
-			if (currentTime - lastFpsUpdateTime >= 1000) {
-				// Update every 1 second
-				setFps(frameCount);
-				frameCount = 0;
-				lastFpsUpdateTime = currentTime;
-			}
 
 			renderer.render(scene, camera);
 		};
