@@ -138,7 +138,7 @@ class Player {
 }
 
 class Bullet {
-	constructor(scene, camera, playerId, speed = 100) {
+	constructor(scene, camera, speed = 100) {
 		this.bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 16), new THREE.MeshStandardMaterial({color: 0xffff00}));
 		this.bullet.position.copy(camera.position);
 		this.direction = new THREE.Vector3();
@@ -147,44 +147,32 @@ class Bullet {
 		this.distanceTravelled = 0;
 		this.hasScored = false;
 		this.scene = scene;
-		this.playerId = playerId; // Track the shooter's ID
 		scene.add(this.bullet);
 	}
 
-	update(deltaTime, obstacles, remotePlayersMap, socketRef, setScore) {
+	update(deltaTime, obstacles, setScore) {
 		this.bullet.position.add(this.direction.clone().multiplyScalar(this.speed * deltaTime));
 		this.distanceTravelled += this.speed * deltaTime;
 
-		// Check for collisions with obstacles
-		const obstacleRaycaster = new THREE.Raycaster(this.bullet.position, this.direction.clone().normalize());
-		const obstacleIntersects = obstacleRaycaster.intersectObjects(obstacles);
+		// Check for collisions with cubes using raycasting
+		const raycaster = new THREE.Raycaster(this.bullet.position, this.direction.clone().normalize());
+		const intersects = raycaster.intersectObjects(obstacles);
 
-		// Check for collisions with remote players
-		for (const [remotePlayerId, remotePlayer] of remotePlayersMap.entries()) {
-			const playerRaycaster = new THREE.Raycaster(this.bullet.position, this.direction.clone().normalize());
-			const playerBoundingBox = new THREE.Box3().setFromObject(remotePlayer.playerBox);
-			const playerIntersects = playerRaycaster.intersectBox(playerBoundingBox);
-
-			if (playerIntersects && this.playerId !== remotePlayerId) {
-				// Player hit by bullet
-				socketRef.current.emit("playerHit", {
-					shooterId: this.playerId,
-					targetId: remotePlayerId,
-				});
-
-				// Optional: Local score increment
+		// Check if the bullet has intersected with any obstacles
+		if (intersects.length > 0 && this.distanceTravelled <= 1000) {
+			// Only increment score if the bullet hasn't scored yet
+			if (!this.hasScored) {
 				setScore((prevScore) => prevScore + 1);
-				break; // Prevent multiple hits from same bullet
+				this.hasScored = true;
+				console.log("Hit");
 			}
 		}
 
-		// Handle obstacle hits and bullet range
-		if (obstacleIntersects.length > 0 || this.distanceTravelled > 1000) {
+		// Continue rendering the bullet, or remove if it travels more than 1000 units
+		if (this.distanceTravelled > 1000) {
 			this.scene.remove(this.bullet);
-			return false; // Indicate bullet should be removed
+			console.log("Miss");
 		}
-
-		return true;
 	}
 }
 
@@ -408,15 +396,6 @@ export default function GameMap() {
 			}
 		});
 
-		socketRef.current.on("playerHit", ({shooterId, targetId}) => {
-			if (targetId === player.id) {
-				// Player was hit, handle death/respawn logic
-				// For example:
-				player.playerBox.position.set(0, playerHeight / 2, 0);
-				setScore(0); // Reset score or implement more complex scoring
-			}
-		});
-
 		socketRef.current.on("playerLeft", (playerId) => {
 			const remotePlayer = remotePlayersRef.current.get(playerId);
 			if (remotePlayer) {
@@ -443,18 +422,10 @@ export default function GameMap() {
 
 			player.update(deltaTime, obstacles, setScore, setPlayerSpeed);
 
-			// bullets.forEach((bullet, index) => {
-			// 	bullet.update(deltaTime, obstacles, setScore);
-			// 	if (bullet.distanceTravelled > 1000) {
-			// 		bullet.scene.remove(bullet.bullet);
-			// 		bullets.splice(index, 1);
-			// 	}
-			// });
-
 			bullets.forEach((bullet, index) => {
-				const isAlive = bullet.update(deltaTime, obstacles, remotePlayersRef.current, socketRef, setScore);
-
-				if (!isAlive) {
+				bullet.update(deltaTime, obstacles, setScore);
+				if (bullet.distanceTravelled > 1000) {
+					bullet.scene.remove(bullet.bullet);
 					bullets.splice(index, 1);
 				}
 			});

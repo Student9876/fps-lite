@@ -91,11 +91,7 @@ io.on("connection", (socket) => {
 			direction,
 		});
 	});
-	socket.on("playerHit", ({shooterId, targetId}) => {
-		// Broadcast hit to all players in the room
-		io.emit("playerHit", {shooterId, targetId});
-	});
-
+z
 	socket.on("disconnect", () => {
 		players.delete(playerId);
 		io.emit("playerLeft", playerId);
