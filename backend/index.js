@@ -91,6 +91,10 @@ io.on("connection", (socket) => {
 			direction,
 		});
 	});
+	socket.on("playerHit", ({shooterId, targetId}) => {
+		// Broadcast hit to all players in the room
+		io.emit("playerHit", {shooterId, targetId});
+	});
 
 	socket.on("disconnect", () => {
 		players.delete(playerId);
