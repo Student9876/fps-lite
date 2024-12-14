@@ -1,10 +1,10 @@
-import {useEffect, useRef, useState} from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import io from "socket.io-client";
 
 class Player {
 	constructor(scene, camera, groundLevel = 0, playerHeight) {
-		this.playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, playerHeight, 0.5), new THREE.MeshStandardMaterial({color: 0x00c0aa}));
+		this.playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, playerHeight, 0.5), new THREE.MeshStandardMaterial({ color: 0x00c0aa }));
 		this.playerBox.position.set(0, playerHeight / 2, 0);
 		scene.add(this.playerBox);
 
@@ -139,7 +139,7 @@ class Player {
 
 class Bullet {
 	constructor(scene, camera, speed = 100) {
-		this.bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 16), new THREE.MeshStandardMaterial({color: 0xffff00}));
+		this.bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffff00 }));
 		this.bullet.position.copy(camera.position);
 		this.direction = new THREE.Vector3();
 		camera.getWorldDirection(this.direction);
@@ -179,18 +179,49 @@ class Bullet {
 class RemotePlayer {
 	constructor(scene, id, color, position) {
 		this.id = id;
-		this.playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.5), new THREE.MeshStandardMaterial({color}));
+		this.playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.5), new THREE.MeshStandardMaterial({ color }));
 		this.playerBox.position.copy(position);
 		scene.add(this.playerBox);
+
+		// Create player ID label
+		this.createPlayerLabel(scene);
+	}
+
+	createPlayerLabel(scene) {
+		const canvas = document.createElement('canvas');
+		canvas.width = 256;
+		canvas.height = 128;
+		const context = canvas.getContext('2d');
+		context.fillStyle = 'white';
+		context.font = '48px Arial';
+		context.textAlign = 'center';
+		context.fillText(this.id.slice(0, 8), 128, 64);
+
+		const texture = new THREE.CanvasTexture(canvas);
+		this.idLabel = new THREE.Mesh(
+			new THREE.PlaneGeometry(1, 0.5),
+			new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+		);
+		this.idLabel.position.set(0, 1.5, 0);
+		this.idLabel.lookAt(scene.position);
+		scene.add(this.idLabel);
 	}
 
 	update(position, rotation) {
 		this.playerBox.position.copy(position);
 		this.playerBox.rotation.y = rotation.yaw;
+
+		// Update label position to follow player
+		if (this.idLabel) {
+			this.idLabel.position.set(position.x, position.y + 1.5, position.z);
+		}
 	}
 
 	remove(scene) {
 		scene.remove(this.playerBox);
+		if (this.idLabel) {
+			scene.remove(this.idLabel);
+		}
 	}
 }
 
@@ -221,7 +252,7 @@ export default function GameMap() {
 
 		const player = new Player(scene, camera, groundLevel, playerHeight);
 
-		const renderer = new THREE.WebGLRenderer({antialias: true});
+		const renderer = new THREE.WebGLRenderer({ antialias: true });
 		renderer.setSize(windowWidth, windowHeight);
 		mountRef.current.appendChild(renderer.domElement);
 
@@ -327,9 +358,9 @@ export default function GameMap() {
 		const crosshairSize = 0.01;
 		const horizontalCrosshair = new THREE.Mesh(
 			new THREE.PlaneGeometry(crosshairSize * 2, crosshairSize / 2),
-			new THREE.MeshBasicMaterial({color: 0xffffff})
+			new THREE.MeshBasicMaterial({ color: 0xffffff })
 		);
-		const verticalCrosshair = new THREE.Mesh(new THREE.PlaneGeometry(crosshairSize / 2, crosshairSize * 2), new THREE.MeshBasicMaterial({color: 0xffffff}));
+		const verticalCrosshair = new THREE.Mesh(new THREE.PlaneGeometry(crosshairSize / 2, crosshairSize * 2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
 		horizontalCrosshair.position.z = -1;
 		verticalCrosshair.position.z = -1;
 
@@ -360,7 +391,7 @@ export default function GameMap() {
 			});
 		};
 
-		socketRef.current.on("playerInit", ({playerId, players}) => {
+		socketRef.current.on("playerInit", ({ playerId, players }) => {
 			player.id = playerId;
 
 			// Create remote players
@@ -389,7 +420,7 @@ export default function GameMap() {
 			}
 		});
 
-		socketRef.current.on("playerMoved", ({playerId, position, rotation}) => {
+		socketRef.current.on("playerMoved", ({ playerId, position, rotation }) => {
 			const remotePlayer = remotePlayersRef.current.get(playerId);
 			if (remotePlayer) {
 				remotePlayer.update(new THREE.Vector3(position.x, position.y, position.z), rotation);
@@ -404,7 +435,7 @@ export default function GameMap() {
 			}
 		});
 
-		socketRef.current.on("bulletFired", ({playerId, position, direction}) => {
+		socketRef.current.on("bulletFired", ({ playerId, position, direction }) => {
 			if (playerId !== player.id) {
 				const bullet = new Bullet(scene, camera);
 				bullet.bullet.position.copy(position);
