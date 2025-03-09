@@ -237,7 +237,7 @@ export default function GameMap() {
 	const sceneRef = useRef(null);
 
 	useEffect(() => {
-		socketRef.current = io("https://fps-lite-server.onrender.com", {
+		socketRef.current = io("https://fps-lite-server-h8xo.onrender.com", {
 			withCredentials: true,
 			transports: ["websocket", "polling"],
 		});
