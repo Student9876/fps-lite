@@ -14,10 +14,29 @@ class Player {
 
 		this.velocity = new THREE.Vector3(0, 0, 0);
 		this.isJumping = false;
-		this.jumpVelocity = 5;
-		this.gravity = -9.81;
 		this.groundLevel = groundLevel;
 		this.playerHeight = playerHeight;
+
+		// Enhanced physics properties
+		this.acceleration = 20.0; // Base acceleration force
+		this.airAcceleration = 2.0; // Reduced acceleration in air
+		this.groundFriction = 0.96; // Ground resistance (lower = more friction)
+		this.airFriction = 0.99; // Air resistance (higher = less air drag)
+		this.maxGroundSpeed = 10; // Maximum ground speed
+		this.maxAirSpeed = 14; // Maximum air speed
+		this.jumpForce = 5.5; // Initial jump velocity
+		this.minSpeedThreshold = 0.1; // Speed below which we zero out velocity
+
+		// Enhanced gravity properties
+		this.gravity = -9.81; // Earth gravity acceleration (m/s²)
+		this.terminalVelocity = -25; // Maximum falling speed
+		this.fallMultiplier = 1.4; // Makes falling faster than rising
+		this.lowJumpMultiplier = 3.0; // Quick release jump multiplier
+		this.coyoteTime = 0.1; // Time in seconds player can jump after leaving ground
+		this.coyoteTimeCounter = 0; // Tracks time since leaving ground
+		this.jumpBufferTime = 0.2; // Time in seconds to buffer a jump input
+		this.jumpBufferCounter = 0; // Tracks jump buffer
+		this.hasBufferedJump = false; // Whether a jump is buffered
 
 		this.keys = {
 			w: false,
@@ -69,60 +88,177 @@ class Player {
 		cameraDirection.normalize();
 
 		const previousPosition = this.playerBox.position.clone();
+		const wasOnGround = !this.isJumping;
 
-		// Player movement logic
-		if (this.keys.w && !this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(2.0));
-		if (this.keys.w && this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(0.145));
-		if (this.keys.s && !this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(-2.0));
-		if (this.keys.s && this.isJumping) this.velocity.add(cameraDirection.clone().multiplyScalar(-0.145));
-		if (this.keys.a && !this.isJumping)
-			this.velocity.add(new THREE.Vector3().crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(-2.0));
-		if (this.keys.a && this.isJumping)
-			this.velocity.add(new THREE.Vector3().crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(-0.145));
-		if (this.keys.d && !this.isJumping)
-			this.velocity.add(new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection).normalize().multiplyScalar(-2.0));
-		if (this.keys.d && this.isJumping)
-			this.velocity.add(new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection).normalize().multiplyScalar(-0.145));
+		// Movement vectors
+		const forward = cameraDirection.clone();
+		// Fix the right vector calculation
+		const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
 
-		// Jump logic
-		if (this.keys.space && !this.isJumping) {
-			this.isJumping = true;
-			this.jumpVelocity = Math.sqrt(2 * 2 * -this.gravity); // Initial jump velocity
+		// Calculate current acceleration based on ground/air state
+		const currentAcceleration = this.isJumping ? this.airAcceleration : this.acceleration;
+
+		// Apply forces based on key input
+		if (this.keys.w) {
+			this.velocity.add(forward.clone().multiplyScalar(currentAcceleration * deltaTime));
+		}
+		if (this.keys.s) {
+			this.velocity.add(forward.clone().multiplyScalar(-currentAcceleration * deltaTime));
+		}
+		if (this.keys.a) {
+			// Fix the A key direction (left)
+			this.velocity.add(right.clone().multiplyScalar(-currentAcceleration * deltaTime));
+		}
+		if (this.keys.d) {
+			// Fix the D key direction (right)
+			this.velocity.add(right.clone().multiplyScalar(currentAcceleration * deltaTime));
 		}
 
-		if (this.isJumping) {
-			this.playerBox.position.y += this.jumpVelocity * deltaTime;
-			this.jumpVelocity += this.gravity * deltaTime;
+		// Handle coyote time - time after walking off edge when you can still jump
+		if (wasOnGround && this.isJumping) {
+			this.coyoteTimeCounter = this.coyoteTime;
+		} else if (this.coyoteTimeCounter > 0) {
+			this.coyoteTimeCounter -= deltaTime;
+		}
 
-			// Check if the player hits the ground
-			if (this.playerBox.position.y <= this.groundLevel + this.playerHeight / 2) {
-				this.playerBox.position.y = this.groundLevel + this.playerHeight / 2;
-				this.isJumping = false;
-				this.jumpVelocity = 0;
+		// Handle jump buffer - allow jump to be queued before landing
+		if (this.jumpBufferCounter > 0) {
+			this.jumpBufferCounter -= deltaTime;
+			if (this.jumpBufferCounter <= 0) {
+				this.hasBufferedJump = false;
 			}
 		}
-		// Apply friction if not jumping
-		if (!this.isJumping) this.velocity.multiplyScalar(0.85);
-		if (this.isJumping) this.velocity.multiplyScalar(0.99999);
-		// this.velocity.multiplyScalar(0.99);
 
-		// Limit speed
-		if (this.velocity.length() > 10 && !this.isJumping) this.velocity.setLength(10);
-		if (this.velocity.length() > 14 && this.isJumping) this.velocity.setLength(14);
-		if (this.velocity.length() < 0.2) this.velocity.set(0, 0, 0);
-		// Apply velocity to player position
+		// Jump logic with coyote time and jump buffer
+		if (this.keys.space && !this.hasBufferedJump) {
+			if (!this.isJumping || this.coyoteTimeCounter > 0) {
+				// Can jump if on ground or within coyote time
+				this.isJumping = true;
+				this.coyoteTimeCounter = 0;
+				this.velocity.y = this.jumpForce;
+				this.hasBufferedJump = false;
+			} else {
+				// Buffer the jump for a short time
+				this.jumpBufferCounter = this.jumpBufferTime;
+				this.hasBufferedJump = true;
+			}
+		}
+
+		// Apply enhanced gravity
+		if (this.velocity.y < 0) {
+			// Falling - apply fall multiplier for faster descent
+			this.velocity.y += this.gravity * this.fallMultiplier * deltaTime;
+		} else if (this.velocity.y > 0 && !this.keys.space) {
+			// Rising but jump button released - cut the jump short
+			this.velocity.y += this.gravity * this.lowJumpMultiplier * deltaTime;
+		} else {
+			// Normal gravity when rising with jump held
+			this.velocity.y += this.gravity * deltaTime;
+		}
+
+		// Apply terminal velocity
+		if (this.velocity.y < this.terminalVelocity) {
+			this.velocity.y = this.terminalVelocity;
+		}
+
+		// Apply appropriate friction based on ground/air state
+		const friction = this.isJumping ? this.airFriction : this.groundFriction;
+
+		// Only apply horizontal friction
+		const horizontalVelocity = new THREE.Vector3(this.velocity.x, 0, this.velocity.z);
+		horizontalVelocity.multiplyScalar(friction);
+		this.velocity.x = horizontalVelocity.x;
+		this.velocity.z = horizontalVelocity.z;
+
+		// Enforce speed limits
+		const horizontalSpeed = horizontalVelocity.length();
+		const maxSpeed = this.isJumping ? this.maxAirSpeed : this.maxGroundSpeed;
+
+		if (horizontalSpeed > maxSpeed) {
+			horizontalVelocity.setLength(maxSpeed);
+			this.velocity.x = horizontalVelocity.x;
+			this.velocity.z = horizontalVelocity.z;
+		}
+
+		// If below threshold, zero out horizontal velocity
+		if (horizontalSpeed < this.minSpeedThreshold) {
+			this.velocity.x = 0;
+			this.velocity.z = 0;
+		}
+
+		// Apply velocity to position
 		this.playerBox.position.add(this.velocity.clone().multiplyScalar(deltaTime));
+
+		// Check if player hits the ground
+		if (this.playerBox.position.y <= this.groundLevel + this.playerHeight / 2) {
+			// Landing on ground
+			this.playerBox.position.y = this.groundLevel + this.playerHeight / 2;
+
+			// Handle buffered jump if one was queued
+			if (this.hasBufferedJump) {
+				this.velocity.y = this.jumpForce;
+				this.hasBufferedJump = false;
+				this.jumpBufferCounter = 0;
+			} else {
+				// Reset vertical velocity on landing
+				this.velocity.y = 0;
+
+				// Apply landing impact based on falling speed
+				if (this.isJumping) {
+					const impactForce = Math.abs(this.velocity.y) / 20;
+					// Horizontal velocity reduction on impact
+					this.velocity.x *= (1 - impactForce);
+					this.velocity.z *= (1 - impactForce);
+
+					this.isJumping = false;
+				}
+			}
+		} else {
+			// Not on ground
+			this.isJumping = true;
+		}
 
 		// Collision check
 		if (this.checkCollision(obstacles, previousPosition)) {
-			this.playerBox.position.copy(previousPosition);
+			// Handle collision by sliding along surfaces
+			this.handleCollision(previousPosition, obstacles);
 		}
 
 		// Update camera position
 		this.camera.position.set(this.playerBox.position.x, this.playerBox.position.y + this.playerHeight / 2, this.playerBox.position.z);
 
-		// Update player speed
-		setPlayerSpeed(this.velocity.length());
+		// Update player speed for UI
+		setPlayerSpeed(this.velocity.length().toFixed(2));
+	}
+
+	handleCollision(previousPosition, obstacles) {
+		// Simple collision response - try sliding along axes
+		// First try X axis
+		const tryPositionX = new THREE.Vector3(previousPosition.x, this.playerBox.position.y, this.playerBox.position.z);
+
+		this.playerBox.position.copy(tryPositionX);
+		if (!this.checkCollision(obstacles, previousPosition)) {
+			// X-axis slide worked
+			this.velocity.x = 0;
+			return;
+		}
+
+		// Try Z axis
+		const tryPositionZ = new THREE.Vector3(this.playerBox.position.x, this.playerBox.position.y, previousPosition.z);
+
+		this.playerBox.position.copy(tryPositionZ);
+		if (!this.checkCollision(obstacles, previousPosition)) {
+			// Z-axis slide worked
+			this.velocity.z = 0;
+			return;
+		}
+
+		// If both failed, just go back to previous position
+		this.playerBox.position.copy(previousPosition);
+
+		// Stop velocity in all directions
+		this.velocity.x = 0;
+		this.velocity.z = 0;
 	}
 
 	checkCollision(obstacles, newPosition) {
@@ -316,13 +452,13 @@ export default function GameMap() {
 
 		const obstacles = [];
 		const cubeColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
-		// for (let i = 0; i < 100; i++) {
-		// 	const color = cubeColors[i % cubeColors.length];
-		// 	const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({color}));
-		// 	cube.position.set((Math.random() - 0.5) * 100, 0.5, (Math.random() - 0.5) * 100);
-		// 	scene.add(cube);
-		// 	obstacles.push(cube);
-		// }
+		for (let i = 0; i < 100; i++) {
+			const color = cubeColors[i % cubeColors.length];
+			const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color }));
+			cube.position.set((Math.random() - 0.5) * 100, 0.5, (Math.random() - 0.5) * 100);
+			scene.add(cube);
+			obstacles.push(cube);
+		}
 
 		const fireSound = new Audio("/sounds/vandal_1tap.mp3");
 
