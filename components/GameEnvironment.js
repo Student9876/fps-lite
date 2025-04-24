@@ -95,8 +95,13 @@ export default class GameEnvironment {
     // Center platform (higher elevation)
     const centerPlatform = this.createPlatform(10, 10, 1, 0x8B4513);
     centerPlatform.position.set(0, 0.5, 0);
+    // Mark as walkable so player can stand on it
+    centerPlatform.userData.walkable = true;
     this.scene.add(centerPlatform);
     this.obstacles.push(centerPlatform);
+    
+    // Add some stairs to climb up to the platform
+    this.addStairs(-5, 0, 5, 0.5, 3, 0);
   }
 
   addRocks() {
@@ -185,6 +190,13 @@ export default class GameEnvironment {
       Math.random() * Math.PI,
       Math.random() * Math.PI
     );
+    if (scale > 1) {
+      // Large rocks can be climbed on
+      rock.userData.walkable = true;
+    } else {
+      // Small rocks are just obstacles
+      rock.userData.walkable = false;
+    }
     return rock;
   }
 
@@ -219,6 +231,7 @@ export default class GameEnvironment {
     const wall = new THREE.Mesh(geometry, material);
     wall.castShadow = true;
     wall.receiveShadow = true;
+    wall.userData.walkable = false; // Mark walls as not walkable
     return wall;
   }
 
@@ -267,6 +280,35 @@ export default class GameEnvironment {
     pondGroup.userData.waterAnimation = waterAnimation;
     
     return pondGroup;
+  }
+
+  // Add a new method to create stairs
+  addStairs(x, z, width, stepHeight, numSteps, rotation) {
+    const stepDepth = 0.5; // Depth of each step
+    
+    for (let i = 0; i < numSteps; i++) {
+      const stepGeometry = new THREE.BoxGeometry(width, stepHeight, stepDepth);
+      const stepMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+      const step = new THREE.Mesh(stepGeometry, stepMaterial);
+      
+      // Position each step
+      step.position.set(
+        x,
+        stepHeight * (i + 0.5), // Position vertically based on step number
+        z - i * stepDepth // Each step is offset by depth
+      );
+      
+      if (rotation) {
+        step.rotation.y = rotation;
+      }
+      
+      step.castShadow = true;
+      step.receiveShadow = true;
+      step.userData.walkable = true; // Mark as walkable
+      
+      this.scene.add(step);
+      this.obstacles.push(step);
+    }
   }
 
   // Helper method to get all obstacles

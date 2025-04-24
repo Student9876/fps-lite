@@ -207,117 +207,198 @@ class Player {
 		// Apply velocity to position
 		this.playerBox.position.add(this.velocity.clone().multiplyScalar(deltaTime));
 
-		// Check if player hits the ground
-		if (this.playerBox.position.y <= this.groundLevel + this.playerHeight / 2) {
-			// Landing on ground
-			this.playerBox.position.y = this.groundLevel + this.playerHeight / 2;
+		// Check if player is on the map
+		const mapHalfSize = 30; // Half of mapSize (60)
+		const isOnMap =
+			Math.abs(this.playerBox.position.x) < mapHalfSize &&
+			Math.abs(this.playerBox.position.z) < mapHalfSize;
 
-			// Handle buffered jump if one was queued
-			if (this.hasBufferedJump) {
-				this.velocity.y = this.jumpForce;
-				this.hasBufferedJump = false;
-				this.jumpBufferCounter = 0;
-			} else {
-				// Reset vertical velocity on landing
-				this.velocity.y = 0;
+		let isOnSurface = false;
 
-				// Apply landing impact based on falling speed
-				if (this.isJumping) {
-					const impactForce = Math.abs(this.velocity.y) / 20;
-					// Horizontal velocity reduction on impact
-					this.velocity.x *= (1 - impactForce);
-					this.velocity.z *= (1 - impactForce);
+		// Check for collisions with obstacles
+		const collisions = this.checkCollision(obstacles, previousPosition);
+		if (collisions) {
+			// Handle collision by sliding along surfaces
+			this.handleCollision(previousPosition, collisions);
 
-					this.isJumping = false;
-				}
+			// Check if any collision was with a walkable surface below us
+			isOnSurface = collisions.some(collision => 
+				collision.yDepth <= collision.xDepth && 
+				collision.yDepth <= collision.zDepth &&
+				this.playerBox.position.y > collision.obstacle.position.y &&
+				collision.obstacle.userData.walkable !== false
+			);
+		}
+
+		// Check if player hits the ground AND is on the map
+		const isOnGround = this.playerBox.position.y <= this.groundLevel + this.playerHeight / 2 && isOnMap;
+
+		if (isOnGround || isOnSurface) {
+			if (isOnGround) {
+				// Standard ground handling
+				this.playerBox.position.y = this.groundLevel + this.playerHeight / 2;
 			}
+
+				// Important: Zero out Y velocity when on any surface
+				this.velocity.y = 0;
+				this.isJumping = false;
+				
+				// Handle jump buffer if one was queued
+				if (this.hasBufferedJump) {
+					this.velocity.y = this.jumpForce;
+					this.hasBufferedJump = false;
+					this.jumpBufferCounter = 0;
+					this.isJumping = true;
+				}
 		} else {
-			// Not on ground
+			// Not on any surface
 			this.isJumping = true;
 		}
 
-		// Collision check
-		if (this.checkCollision(obstacles, previousPosition)) {
-			// Handle collision by sliding along surfaces
-			this.handleCollision(previousPosition, obstacles);
+		// Reset player if fallen too far
+		if (this.playerBox.position.y < -50) {
+			this.playerBox.position.set(-25, this.groundLevel + this.playerHeight / 2, -25);
+			this.velocity.set(0, 0, 0);
+			this.isJumping = false;
+			this.camera.position.set(-25, this.groundLevel + this.playerHeight, -25);
 		}
 
 		// Update camera position
-		this.camera.position.set(this.playerBox.position.x, this.playerBox.position.y + this.playerHeight / 2, this.playerBox.position.z);
+		this.camera.position.set(
+			this.playerBox.position.x, 
+			this.playerBox.position.y + this.playerHeight / 2, 
+			this.playerBox.position.z
+		);
 
-		// Update player speed for UI
-		setPlayerSpeed(this.velocity.length().toFixed(2));
+		// Update player speed for UI - provide both total and per-axis speeds
+		const totalSpeed = this.velocity.length();
+		const axisSpeed = {
+			x: Math.abs(this.velocity.x).toFixed(2),
+			y: Math.abs(this.velocity.y).toFixed(2),
+			z: Math.abs(this.velocity.z).toFixed(2)
+		};
+		
+		setPlayerSpeed({
+			total: totalSpeed.toFixed(2),
+			axis: axisSpeed
+		});
 	}
 
-	handleCollision(previousPosition, obstacles) {
-		// Improved collision response - slide along obstacles
-		// First try X axis
-		const tryPositionX = new THREE.Vector3(previousPosition.x, this.playerBox.position.y, this.playerBox.position.z);
-
-		this.playerBox.position.copy(tryPositionX);
-		if (!this.checkCollision(obstacles, previousPosition)) {
-			// X-axis slide worked
-			this.velocity.x = 0;
-			return;
-		}
-
-		// Try Z axis next
-		const tryPositionZ = new THREE.Vector3(this.playerBox.position.x, this.playerBox.position.y, previousPosition.z);
-
-		this.playerBox.position.copy(tryPositionZ);
-		if (!this.checkCollision(obstacles, previousPosition)) {
-			// Z-axis slide worked
-			this.velocity.z = 0;
-			return;
-		}
-
-		// If both failed, just go back to previous position
-		this.playerBox.position.copy(previousPosition);
-
-		// Only zero the velocity components that are moving into the collision
-		// Calculate direction to obstacle
-		const direction = new THREE.Vector3();
-
-		// Find closest obstacle for better collision response
-		let closestDistance = Infinity;
-		let closestObstacle = null;
-
-		for (const obstacle of obstacles) {
-			const obstacleCenter = new THREE.Vector3();
-			new THREE.Box3().setFromObject(obstacle).getCenter(obstacleCenter);
-			const distance = this.playerBox.position.distanceTo(obstacleCenter);
-
-			if (distance < closestDistance) {
-				closestDistance = distance;
-				closestObstacle = obstacle;
+	handleCollision(previousPosition, collisions) {
+		if (!collisions || collisions.length === 0) return;
+		
+		// Sort collisions by penetration depth (smallest first)
+		collisions.sort((a, b) => {
+			const depthA = Math.min(a.xDepth, a.yDepth, a.zDepth);
+			const depthB = Math.min(b.xDepth, b.yDepth, b.zDepth);
+			return depthA - depthB;
+		});
+		
+		// Handle each collision
+		for (const collision of collisions) {
+			const { xDepth, yDepth, zDepth, obstacle } = collision;
+			
+			// Find the shallowest penetration axis
+			if (xDepth <= yDepth && xDepth <= zDepth) {
+				// X-axis collision resolution
+				if (this.playerBox.position.x < obstacle.position.x) {
+					this.playerBox.position.x -= xDepth;
+					this.velocity.x = Math.min(0, this.velocity.x); // Only cancel if moving toward obstacle
+				} else {
+					this.playerBox.position.x += xDepth;
+					this.velocity.x = Math.max(0, this.velocity.x); // Only cancel if moving toward obstacle
+				}
+			} 
+			else if (yDepth <= xDepth && yDepth <= zDepth) {
+				// Y-axis collision resolution
+				if (this.playerBox.position.y < obstacle.position.y) {
+					// We hit something from below
+					this.playerBox.position.y -= yDepth;
+					// Cancel upward velocity
+					this.velocity.y = Math.min(0, this.velocity.y);
+				} else {
+					// We're landing on top of something
+					this.playerBox.position.y += yDepth;
+					
+					// If the object is walkable (like a platform)
+					if (obstacle.userData.walkable !== false) {
+						// Landing logic
+						this.velocity.y = 0;
+						this.isJumping = false;
+						
+						// Apply landing impact based on falling speed
+						const impactForce = Math.abs(this.velocity.y) / 20;
+						this.velocity.x *= (1 - impactForce);
+						this.velocity.z *= (1 - impactForce);
+						
+						// Handle jump buffer if present
+						if (this.hasBufferedJump) {
+							this.velocity.y = this.jumpForce;
+							this.hasBufferedJump = false;
+							this.jumpBufferCounter = 0;
+							this.isJumping = true;
+						}
+					}
+				}
 			}
-		}
-
-		if (closestObstacle) {
-			const obstacleCenter = new THREE.Vector3();
-			new THREE.Box3().setFromObject(closestObstacle).getCenter(obstacleCenter);
-
-			// Get collision normal (direction from obstacle to player)
-			direction.subVectors(this.playerBox.position, obstacleCenter).normalize();
-
-			// Cancel velocity in the collision normal direction
-			const dot = this.velocity.dot(direction);
-			if (dot < 0) {
-				// Only cancel velocity component moving toward obstacle
-				this.velocity.sub(direction.multiplyScalar(dot));
+			else {
+				// Z-axis collision resolution
+				if (this.playerBox.position.z < obstacle.position.z) {
+					this.playerBox.position.z -= zDepth;
+					this.velocity.z = Math.min(0, this.velocity.z); // Only cancel if moving toward obstacle
+				} else {
+					this.playerBox.position.z += zDepth;
+					this.velocity.z = Math.max(0, this.velocity.z); // Only cancel if moving toward obstacle
+				}
 			}
 		}
 	}
 
-	checkCollision(obstacles, newPosition) {
+	checkCollision(obstacles, previousPosition) {
+		// Create a bounding box for the player
 		const playerBB = new THREE.Box3().setFromObject(this.playerBox);
+		
+		// Store collision data if we find a collision
+		const collisions = [];
+		
 		for (const obstacle of obstacles) {
+			// Skip ground plane which is handled separately
+			if (obstacle.userData.isGround) continue;
+			
 			const obstacleBB = new THREE.Box3().setFromObject(obstacle);
 			if (playerBB.intersectsBox(obstacleBB)) {
-				return true;
+				// Calculate intersection depth on each axis
+				const intersection = {
+					obstacle,
+					xDepth: 0,
+					yDepth: 0,
+					zDepth: 0
+				};
+				
+				// Calculate overlap on each axis
+				if (this.playerBox.position.x < obstacle.position.x) {
+					intersection.xDepth = playerBB.max.x - obstacleBB.min.x;
+				} else {
+					intersection.xDepth = obstacleBB.max.x - playerBB.min.x;
+				}
+				
+				if (this.playerBox.position.y < obstacle.position.y) {
+					intersection.yDepth = playerBB.max.y - obstacleBB.min.y;
+				} else {
+					intersection.yDepth = obstacleBB.max.y - playerBB.min.y;
+				}
+				
+				if (this.playerBox.position.z < obstacle.position.z) {
+					intersection.zDepth = playerBB.max.z - obstacleBB.min.z;
+				} else {
+					intersection.zDepth = obstacleBB.max.z - playerBB.min.z;
+				}
+				
+				collisions.push(intersection);
 			}
 		}
-		return false;
+		
+		return collisions.length > 0 ? collisions : false;
 	}
 }
 
@@ -518,7 +599,10 @@ class RemotePlayer {
 export default function GameMap() {
 	const mountRef = useRef(null);
 	const [score, setScore] = useState(0);
-	const [playerSpeed, setPlayerSpeed] = useState(0);
+	const [playerSpeed, setPlayerSpeed] = useState({
+		total: "0.00", 
+		axis: { x: "0.00", y: "0.00", z: "0.00" }
+	});
 	const [bullets, setBullets] = useState([]);
 	const [fps, setFps] = useState(0);
 	const socketRef = useRef(null);
@@ -725,31 +809,45 @@ export default function GameMap() {
 				Math.abs(this.playerBox.position.x) < mapHalfSize &&
 				Math.abs(this.playerBox.position.z) < mapHalfSize;
 
+			let isOnSurface = false;
+
+			// Check for collisions with obstacles
+			const collisions = this.checkCollision(obstacles, previousPosition);
+			if (collisions) {
+				// Handle collision by sliding along surfaces
+				this.handleCollision(previousPosition, collisions);
+
+				// Check if any collision was with a walkable surface below us
+				isOnSurface = collisions.some(collision => 
+					collision.yDepth <= collision.xDepth && 
+					collision.yDepth <= collision.zDepth &&
+					this.playerBox.position.y > collision.obstacle.position.y &&
+					collision.obstacle.userData.walkable !== false
+				);
+			}
+
 			// Check if player hits the ground AND is on the map
-			if (this.playerBox.position.y <= this.groundLevel + this.playerHeight / 2 && isOnMap) {
-				// Landing on ground
-				this.playerBox.position.y = this.groundLevel + this.playerHeight / 2;
+			const isOnGround = this.playerBox.position.y <= this.groundLevel + this.playerHeight / 2 && isOnMap;
 
-				// Handle buffered jump if one was queued
-				if (this.hasBufferedJump) {
-					this.velocity.y = this.jumpForce;
-					this.hasBufferedJump = false;
-					this.jumpBufferCounter = 0;
-				} else {
-					// Reset vertical velocity on landing
-					this.velocity.y = 0;
-
-					// Apply landing impact based on falling speed
-					if (this.isJumping) {
-						const impactForce = Math.abs(this.velocity.y) / 20;
-						this.velocity.x *= (1 - impactForce);
-						this.velocity.z *= (1 - impactForce);
-
-						this.isJumping = false;
-					}
+			if (isOnGround || isOnSurface) {
+				if (isOnGround) {
+					// Standard ground handling
+					this.playerBox.position.y = this.groundLevel + this.playerHeight / 2;
 				}
+
+					// Important: Zero out Y velocity when on any surface
+					this.velocity.y = 0;
+					this.isJumping = false;
+					
+					// Handle jump buffer if one was queued
+					if (this.hasBufferedJump) {
+						this.velocity.y = this.jumpForce;
+						this.hasBufferedJump = false;
+						this.jumpBufferCounter = 0;
+						this.isJumping = true;
+					}
 			} else {
-				// Not on ground or not on the map
+				// Not on any surface
 				this.isJumping = true;
 			}
 
@@ -776,8 +874,18 @@ export default function GameMap() {
 			// Update camera position
 			this.camera.position.set(this.playerBox.position.x, this.playerBox.position.y + this.playerHeight / 2, this.playerBox.position.z);
 
-			// Update player speed for UI
-			setPlayerSpeed(this.velocity.length().toFixed(2));
+			// Update player speed for UI with proper format
+			const totalSpeed = this.velocity.length();
+			const axisSpeed = {
+				x: Math.abs(this.velocity.x).toFixed(2),
+				y: Math.abs(this.velocity.y).toFixed(2),
+				z: Math.abs(this.velocity.z).toFixed(2)
+			};
+			
+			setPlayerSpeed({
+				total: totalSpeed.toFixed(2),
+				axis: axisSpeed
+			});
 
 			// After original update completes, send the new position to server
 			socketRef.current.emit("playerMove", {
@@ -931,7 +1039,8 @@ export default function GameMap() {
 		<div ref={mountRef}>
 			<div className="" style={scoreBoxStyle}>
 				Score: {score} <br />
-				Player speed: {playerSpeed} <br />
+				Speed: {playerSpeed.total} <br />
+				X: {playerSpeed.axis.x} | Y: {playerSpeed.axis.y} | Z: {playerSpeed.axis.z} <br />
 				FPS: {fps} <br />
 				Mass: {playerRef.current?.mass.toFixed(2) || 'N/A'} kg
 			</div>
