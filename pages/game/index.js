@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import io from "socket.io-client";
-import { Physics, calculateMass, calculateBoxVolume, calculateSphereVolume } from './physics';
+import { Physics, calculateMass, calculateBoxVolume, calculateSphereVolume } from '../../utils/physics'; // Adjust the import path as necessary
 
 class Player {
 	constructor(scene, camera, groundLevel = 0, playerHeight) {
