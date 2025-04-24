@@ -31,7 +31,7 @@ class Player {
 		this.playerHeight = playerHeight;
 
 		// Enhanced physics properties
-		this.acceleration = 20.0; // Base acceleration force
+		this.acceleration = 30.0; // Base acceleration force
 		this.airAcceleration = 2.0; // Reduced acceleration in air
 		this.groundFriction = 0.96; // Ground resistance (lower = more friction)
 		this.airFriction = 0.99; // Air resistance (higher = less air drag)
@@ -893,6 +893,13 @@ export default function GameMap() {
 			}
 
 			renderer.render(scene, camera);
+
+			// In your animate function
+			scene.traverse(object => {
+				if (object.userData.isWater && object.userData.waterAnimation) {
+					object.userData.waterAnimation.update(currentTime * 0.001);
+				}
+			});
 		};
 
 		renderer.domElement.addEventListener("click", enablePointerLock);

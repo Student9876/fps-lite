@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 
 export default class GameEnvironment {
   constructor(scene, mapSize = 60) {
@@ -222,17 +223,50 @@ export default class GameEnvironment {
   }
 
   createPond(radius) {
-    const geometry = new THREE.CylinderGeometry(radius, radius, 0.5, 32);
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x1e90ff,
-      transparent: true,
-      opacity: 0.8,
+    // Create a group to hold both the water surface and base
+    const pondGroup = new THREE.Group();
+    
+    // Create the pond base (slightly darker blue)
+    const baseGeometry = new THREE.CylinderGeometry(radius, radius, 0.3, 32);
+    const baseMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0x0a4d8c,
+      transparent: false,
       metalness: 0.1,
       roughness: 0.2
     });
-    const pond = new THREE.Mesh(geometry, material);
-    pond.userData.isPond = true; // Mark as water for special handling
-    return pond;
+    const pondBase = new THREE.Mesh(baseGeometry, baseMaterial);
+    pondBase.position.y = -0.15; // Position slightly below ground
+    pondGroup.add(pondBase);
+    
+    // Create the reflective water surface using Reflector
+    const waterGeometry = new THREE.CircleGeometry(radius, 32);
+    
+    // Create a reflector for the water surface
+    const reflector = new Reflector(waterGeometry, {
+      clipBias: 0.003,
+      textureWidth: 512, // Texture resolution, can increase for better quality
+      textureHeight: 512,
+      color: 0x4488aa,
+      opacity: 0.6  // Make it slightly transparent
+    });
+    
+    reflector.rotation.x = -Math.PI / 2; // Lay flat
+    reflector.position.y = 0.05; // Just above the pond base
+    pondGroup.add(reflector);
+    
+    // Add gentle wave animation
+    const waterAnimation = {
+      update: function(time) {
+        // Simple y-position oscillation for a gentle wave effect
+        reflector.position.y = 0.05 + Math.sin(time * 0.5) * 0.02;
+      }
+    };
+    
+    // Store the animation in userData for the animation loop
+    pondGroup.userData.isWater = true;
+    pondGroup.userData.waterAnimation = waterAnimation;
+    
+    return pondGroup;
   }
 
   // Helper method to get all obstacles
