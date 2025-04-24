@@ -1,42 +1,52 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import io from "socket.io-client";
+import { Physics, calculateMass, calculateBoxVolume, calculateSphereVolume } from './physics';
 
 class Player {
 	constructor(scene, camera, groundLevel = 0, playerHeight) {
-		this.playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, playerHeight, 0.5), new THREE.MeshStandardMaterial({ color: 0x00c0aa }));
-		this.playerBox.position.set(0, playerHeight / 2, 0);
-		scene.add(this.playerBox);
+		// Create player with dimensions
+        const playerWidth = 0.5;
+        const playerDepth = 0.5;
+        
+        this.playerBox = new THREE.Mesh(
+            new THREE.BoxGeometry(playerWidth, playerHeight, playerDepth), 
+            new THREE.MeshStandardMaterial({ color: 0x00c0aa })
+        );
+        this.playerBox.position.set(0, playerHeight / 2, 0);
+        scene.add(this.playerBox);
 
-		this.camera = camera;
-		this.camera.position.set(0, groundLevel + playerHeight, 0);
-		scene.add(this.camera);
+        // Calculate player mass based on dimensions and density
+        const playerVolume = calculateBoxVolume(playerWidth, playerHeight, playerDepth);
+        this.mass = calculateMass(playerVolume, 'PLAYER');
+        
+        this.camera = camera;
+        this.camera.position.set(0, groundLevel + playerHeight, 0);
+        scene.add(this.camera);
 
-		this.velocity = new THREE.Vector3(0, 0, 0);
-		this.isJumping = false;
-		this.groundLevel = groundLevel;
-		this.playerHeight = playerHeight;
+        this.velocity = new THREE.Vector3(0, 0, 0);
+        this.isJumping = false;
+        this.groundLevel = groundLevel;
+        this.playerHeight = playerHeight;
 
-		// Enhanced physics properties
-		this.acceleration = 20.0; // Base acceleration force
-		this.airAcceleration = 2.0; // Reduced acceleration in air
-		this.groundFriction = 0.96; // Ground resistance (lower = more friction)
-		this.airFriction = 0.99; // Air resistance (higher = less air drag)
-		this.maxGroundSpeed = 10; // Maximum ground speed
-		this.maxAirSpeed = 14; // Maximum air speed
-		this.jumpForce = 5.5; // Initial jump velocity
-		this.minSpeedThreshold = 0.1; // Speed below which we zero out velocity
+        // Enhanced physics properties
+        this.acceleration = 20.0; // Base acceleration force
+        this.airAcceleration = 2.0; // Reduced acceleration in air
+        this.groundFriction = 0.96; // Ground resistance (lower = more friction)
+        this.airFriction = 0.99; // Air resistance (higher = less air drag)
+        this.maxGroundSpeed = 10; // Maximum ground speed
+        this.maxAirSpeed = 14; // Maximum air speed
+        this.jumpForce = 5.5; // Initial jump velocity
+        this.minSpeedThreshold = 0.1; // Speed below which we zero out velocity
 
-		// Enhanced gravity properties
-		this.gravity = -9.81; // Earth gravity acceleration (m/s²)
-		this.terminalVelocity = -25; // Maximum falling speed
-		this.fallMultiplier = 1.4; // Makes falling faster than rising
-		this.lowJumpMultiplier = 3.0; // Quick release jump multiplier
-		this.coyoteTime = 0.1; // Time in seconds player can jump after leaving ground
-		this.coyoteTimeCounter = 0; // Tracks time since leaving ground
-		this.jumpBufferTime = 0.2; // Time in seconds to buffer a jump input
-		this.jumpBufferCounter = 0; // Tracks jump buffer
-		this.hasBufferedJump = false; // Whether a jump is buffered
+        // Enhanced gravity properties - now using unified Physics constants
+        this.fallMultiplier = 1.4; // Makes falling faster than rising
+        this.lowJumpMultiplier = 3.0; // Quick release jump multiplier
+        this.coyoteTime = 0.1; // Time in seconds player can jump after leaving ground
+        this.coyoteTimeCounter = 0; // Tracks time since leaving ground
+        this.jumpBufferTime = 0.2; // Time in seconds to buffer a jump input
+        this.jumpBufferCounter = 0; // Tracks jump buffer
+        this.hasBufferedJump = false; // Whether a jump is buffered
 
 		this.keys = {
 			w: false,
@@ -144,21 +154,21 @@ class Player {
 			}
 		}
 
-		// Apply enhanced gravity
+		// Apply enhanced gravity using unified Physics.GRAVITY
 		if (this.velocity.y < 0) {
 			// Falling - apply fall multiplier for faster descent
-			this.velocity.y += this.gravity * this.fallMultiplier * deltaTime;
+			this.velocity.y += Physics.GRAVITY * this.fallMultiplier * deltaTime;
 		} else if (this.velocity.y > 0 && !this.keys.space) {
 			// Rising but jump button released - cut the jump short
-			this.velocity.y += this.gravity * this.lowJumpMultiplier * deltaTime;
+			this.velocity.y += Physics.GRAVITY * this.lowJumpMultiplier * deltaTime;
 		} else {
 			// Normal gravity when rising with jump held
-			this.velocity.y += this.gravity * deltaTime;
+			this.velocity.y += Physics.GRAVITY * deltaTime;
 		}
 
 		// Apply terminal velocity
-		if (this.velocity.y < this.terminalVelocity) {
-			this.velocity.y = this.terminalVelocity;
+		if (this.velocity.y < Physics.TERMINAL_VELOCITY) {
+			this.velocity.y = Physics.TERMINAL_VELOCITY;
 		}
 
 		// Apply appropriate friction based on ground/air state
@@ -274,42 +284,148 @@ class Player {
 }
 
 class Bullet {
-	constructor(scene, camera, speed = 100) {
-		this.bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffff00 }));
-		this.bullet.position.copy(camera.position);
-		this.direction = new THREE.Vector3();
-		camera.getWorldDirection(this.direction);
-		this.speed = speed;
-		this.distanceTravelled = 0;
-		this.hasScored = false;
-		this.scene = scene;
-		scene.add(this.bullet);
-	}
+    constructor(scene, camera, speed = 100) {
+        const bulletRadius = 0.08;
+        this.bullet = new THREE.Mesh(
+            new THREE.SphereGeometry(bulletRadius, 16, 16), 
+            new THREE.MeshStandardMaterial({ color: 0xffff00 })
+        );
+        this.bullet.position.copy(camera.position);
+        this.direction = new THREE.Vector3();
+        camera.getWorldDirection(this.direction);
+        this.speed = speed;
+        this.distanceTravelled = 0;
+        this.hasScored = false;
+        this.scene = scene;
+        scene.add(this.bullet);
+        
+        // Store bullet radius for collision detection
+        this.bulletRadius = bulletRadius;
+        
+        // Calculate bullet mass based on volume and density
+        const bulletVolume = calculateSphereVolume(bulletRadius);
+        this.mass = calculateMass(bulletVolume, 'BULLET');
+        
+        // Add gravity effects to bullets
+        this.velocity = this.direction.clone().multiplyScalar(this.speed);
+        this.affectedByGravity = true; // Enable gravity for more realistic ballistics
+    }
 
-	update(deltaTime, obstacles, setScore) {
-		this.bullet.position.add(this.direction.clone().multiplyScalar(this.speed * deltaTime));
-		this.distanceTravelled += this.speed * deltaTime;
+    update(deltaTime, obstacles, setScore) {
+        // Apply gravity if enabled
+        if (this.affectedByGravity) {
+            this.velocity.y += Physics.GRAVITY * deltaTime;
+        }
+        
+        // Store previous position for collision detection
+        const previousPosition = this.bullet.position.clone();
+        
+        // Update position using velocity
+        this.bullet.position.add(this.velocity.clone().multiplyScalar(deltaTime));
+        this.distanceTravelled += this.velocity.length() * deltaTime;
 
-		// Check for collisions with cubes using raycasting
-		const raycaster = new THREE.Raycaster(this.bullet.position, this.direction.clone().normalize());
-		const intersects = raycaster.intersectObjects(obstacles);
+        // Create bullet bounding sphere for accurate collision detection
+        const bulletBoundingSphere = new THREE.Sphere(
+            this.bullet.position.clone(),
+            this.bulletRadius
+        );
+        
+        // Check for actual collisions with obstacles
+        let hasCollided = false;
+        let hitObstacle = null;
+        let hitPoint = null;
+        
+        for (const obstacle of obstacles) {
+            // Create obstacle bounding box
+            const obstacleBB = new THREE.Box3().setFromObject(obstacle);
+            
+            // Test if sphere intersects with box
+            if (this.sphereIntersectsBox(bulletBoundingSphere, obstacleBB)) {
+                hasCollided = true;
+                hitObstacle = obstacle;
+                
+                // Calculate approximate hit point (center of bullet at collision)
+                hitPoint = this.bullet.position.clone();
+                break;
+            }
+        }
 
-		// Check if the bullet has intersected with any obstacles
-		if (intersects.length > 0 && this.distanceTravelled <= 1000) {
-			// Only increment score if the bullet hasn't scored yet
-			if (!this.hasScored) {
-				setScore((prevScore) => prevScore + 1);
-				this.hasScored = true;
-				console.log("Hit");
-			}
-		}
+        // Handle collision if one occurred
+        if (hasCollided && !this.hasScored) {
+            // Increment score
+            setScore((prevScore) => prevScore + 1);
+            this.hasScored = true;
+            
+            // Create impact effect
+            this.createImpactEffect(hitPoint);
+            
+            // Remove bullet
+            this.scene.remove(this.bullet);
+            return true; // Signal that bullet should be removed
+        }
 
-		// Continue rendering the bullet, or remove if it travels more than 1000 units
-		if (this.distanceTravelled > 1000) {
-			this.scene.remove(this.bullet);
-			console.log("Miss");
-		}
-	}
+        // Continue rendering the bullet, or remove if it travels more than 1000 units
+        if (this.distanceTravelled > 1000) {
+            this.scene.remove(this.bullet);
+            return true; // Signal that bullet should be removed
+        }
+        
+        return false; // Bullet should continue to exist
+    }
+    
+    // Helper method to check if a sphere intersects with a box
+    sphereIntersectsBox(sphere, box) {
+        // Find the closest point on the box to the sphere center
+        const closestPoint = new THREE.Vector3();
+        
+        // Clamp sphere center to box bounds to find closest point
+        closestPoint.x = Math.max(box.min.x, Math.min(sphere.center.x, box.max.x));
+        closestPoint.y = Math.max(box.min.y, Math.min(sphere.center.y, box.max.y));
+        closestPoint.z = Math.max(box.min.z, Math.min(sphere.center.z, box.max.z));
+        
+        // Calculate squared distance between sphere center and closest point
+        const distanceSquared = closestPoint.distanceToSquared(sphere.center);
+        
+        // Sphere intersects if the distance is less than or equal to the squared radius
+        return distanceSquared <= (sphere.radius * sphere.radius);
+    }
+    
+    // Create a visual effect at impact point
+    createImpactEffect(position) {
+        // Simple particle effect
+        const particles = 8;
+        const particleGeometry = new THREE.SphereGeometry(0.03, 8, 8);
+        const particleMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffcc00,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        for (let i = 0; i < particles; i++) {
+            const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+            particle.position.copy(position);
+            
+            // Random direction
+            const direction = new THREE.Vector3(
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1
+            ).normalize();
+            
+            // Set velocity
+            particle.userData.velocity = direction.multiplyScalar(1 + Math.random() * 2);
+            particle.userData.lifetime = 0.5; // Lifetime in seconds
+            particle.userData.age = 0;
+            
+            this.scene.add(particle);
+            
+            // Add to an impact particles array to be updated in the game loop
+            if (!this.scene.userData.impactParticles) {
+                this.scene.userData.impactParticles = [];
+            }
+            this.scene.userData.impactParticles.push(particle);
+        }
+    }
 }
 
 class RemotePlayer {
@@ -450,15 +566,26 @@ export default function GameMap() {
 		directionalLight4.position.set(-5, 10, 5);
 		scene.add(directionalLight4);
 
-		const obstacles = [];
-		const cubeColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
-		for (let i = 0; i < 100; i++) {
-			const color = cubeColors[i % cubeColors.length];
-			const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color }));
-			cube.position.set((Math.random() - 0.5) * 100, 0.5, (Math.random() - 0.5) * 100);
-			scene.add(cube);
-			obstacles.push(cube);
-		}
+		// In the useEffect where obstacles are created:
+
+const obstacles = [];
+const cubeColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+for (let i = 0; i < 100; i++) {
+    const color = cubeColors[i % cubeColors.length];
+    const cubeSize = 1; // 1x1x1 cube
+    const cube = new THREE.Mesh(
+        new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize), 
+        new THREE.MeshStandardMaterial({ color })
+    );
+    cube.position.set((Math.random() - 0.5) * 100, 0.5, (Math.random() - 0.5) * 100);
+    
+    // Calculate and assign mass to the obstacle
+    const obstacleVolume = calculateBoxVolume(cubeSize, cubeSize, cubeSize);
+    cube.userData.mass = calculateMass(obstacleVolume, 'OBSTACLE');
+    
+    scene.add(cube);
+    obstacles.push(cube);
+}
 
 		const fireSound = new Audio("/sounds/vandal_1tap.mp3");
 
@@ -589,13 +716,36 @@ export default function GameMap() {
 
 			player.update(deltaTime, obstacles, setScore, setPlayerSpeed);
 
-			bullets.forEach((bullet, index) => {
-				bullet.update(deltaTime, obstacles, setScore);
-				if (bullet.distanceTravelled > 1000) {
-					bullet.scene.remove(bullet.bullet);
-					bullets.splice(index, 1);
+			// Update and filter bullets that need to be removed
+			for (let i = bullets.length - 1; i >= 0; i--) {
+				const shouldRemove = bullets[i].update(deltaTime, obstacles, setScore);
+				if (shouldRemove) {
+					bullets.splice(i, 1);
 				}
-			});
+			}
+
+			// Update impact particles if they exist
+			if (scene.userData.impactParticles && scene.userData.impactParticles.length > 0) {
+				for (let i = scene.userData.impactParticles.length - 1; i >= 0; i--) {
+					const particle = scene.userData.impactParticles[i];
+					particle.userData.age += deltaTime;
+					
+					// Update position based on velocity
+					particle.position.add(
+						particle.userData.velocity.clone().multiplyScalar(deltaTime)
+					);
+					
+					// Fade out based on age
+					const opacity = 1 - (particle.userData.age / particle.userData.lifetime);
+					particle.material.opacity = Math.max(0, opacity);
+					
+					// Remove particles that have lived their lifetime
+					if (particle.userData.age >= particle.userData.lifetime) {
+						scene.remove(particle);
+						scene.userData.impactParticles.splice(i, 1);
+					}
+				}
+			}
 
 			// Calculate FPS
 			frameCount++;
@@ -637,7 +787,10 @@ export default function GameMap() {
 	return (
 		<div ref={mountRef}>
 			<div className="" style={scoreBoxStyle}>
-				Score: {score} <br /> Player speed: {playerSpeed} <br /> FPS: {fps}
+				Score: {score} <br /> 
+				Player speed: {playerSpeed} <br /> 
+				FPS: {fps} <br />
+				Mass: {playerRef.current?.mass.toFixed(2) || 'N/A'} kg
 			</div>
 		</div>
 	);
@@ -652,352 +805,3 @@ const scoreBoxStyle = {
 	fontSize: "24px",
 	zIndex: 10,
 };
-
-// "use client";
-// import {useEffect, useRef, useState} from "react";
-// import * as THREE from "three";
-
-// export default function GameMap() {
-// 	const mountRef = useRef(null);
-// 	const [score, setScore] = useState(0); // State to keep track of the score
-// 	const bullets = []; // Array to keep track of active bullets
-// 	const errorFactor = 0.1;
-// 	const jumpHeight = 2; // Height of the jump
-// 	const gravity = -9.81; // Gravity value
-
-// 	const acceleration_ground = 2.0; // Adjust for desired acceleration rate
-// 	const maxSpeed = 10; // Maximum speed
-// 	const friction_ground = 0.82; // Adjust for desired slowing rate (e.g., between 0.8 to 0.99)
-// 	const velocity = new THREE.Vector3(0, 0, 0); // Initialize velocity for the player
-// 	const [playerSpeed, setPlayerSpeed] = useState(0); // State to keep track of the player speed
-
-// 	useEffect(() => {
-// 		const windowWidth = window.innerWidth * 0.989;
-// 		const windowHeight = window.innerHeight * 0.98;
-
-// 		const scene = new THREE.Scene();
-// 		const camera = new THREE.PerspectiveCamera(75, windowWidth / windowHeight, 0.1, 1000);
-// 		const groundLevel = 0;
-// 		const playerHeight = 0.5;
-
-// 		const playerBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, playerHeight, 0.5), new THREE.MeshStandardMaterial({color: 0x00c0aa}));
-// 		playerBox.position.set(0, playerHeight / 2, 0);
-// 		scene.add(playerBox);
-
-// 		camera.position.set(0, groundLevel + playerHeight, 0);
-
-// 		const renderer = new THREE.WebGLRenderer({antialias: true});
-// 		renderer.setSize(windowWidth, windowHeight);
-// 		mountRef.current.appendChild(renderer.domElement);
-
-// 		const groundGeometry = new THREE.PlaneGeometry(100, 100);
-// 		const groundMaterial = new THREE.MeshStandardMaterial({color: 0x888888});
-// 		const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-// 		ground.rotation.x = -Math.PI / 2;
-// 		scene.add(ground);
-
-// 		// Add ambient light
-// 		const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // Soft white light
-// 		scene.add(ambientLight);
-
-// 		// Add multiple directional lights
-// 		const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.5);
-// 		directionalLight1.position.set(5, 10, 5);
-// 		scene.add(directionalLight1);
-
-// 		const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
-// 		directionalLight2.position.set(-5, 10, -5);
-// 		scene.add(directionalLight2);
-
-// 		const directionalLight3 = new THREE.DirectionalLight(0xffffff, 0.5);
-// 		directionalLight3.position.set(5, 10, -5);
-// 		scene.add(directionalLight3);
-
-// 		const directionalLight4 = new THREE.DirectionalLight(0xffffff, 0.5);
-// 		directionalLight4.position.set(-5, 10, 5);
-// 		scene.add(directionalLight4);
-
-// 		const obstacles = [];
-// 		const cubeColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
-// 		for (let i = 0; i < 10; i++) {
-// 			const color = cubeColors[i % cubeColors.length];
-// 			const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({color}));
-// 			cube.position.set((Math.random() - 0.5) * 20, 0.5, (Math.random() - 0.5) * 20);
-// 			scene.add(cube);
-// 			obstacles.push(cube);
-// 		}
-
-// 		const keys = {w: false, a: false, s: false, d: false, space: false}; // Added space key
-// 		const speed = 10;
-// 		let yaw = 0;
-// 		let pitch = 0;
-// 		let isJumping = false; // Jump state
-// 		let jumpVelocity = 0; // Current jump velocity
-
-// 		const handleMouseMove = (event) => {
-// 			yaw -= event.movementX * 0.002;
-// 			pitch -= event.movementY * 0.002;
-// 			pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-// 		};
-
-// 		const checkCollision = (newPosition) => {
-// 			const playerBB = new THREE.Box3().setFromObject(playerBox);
-// 			for (const obstacle of obstacles) {
-// 				const obstacleBB = new THREE.Box3().setFromObject(obstacle);
-// 				if (playerBB.intersectsBox(obstacleBB)) {
-// 					return true;
-// 				}
-// 			}
-// 			return false;
-// 		};
-
-// 		let lastTime = performance.now(); // Track time of the last frame
-
-// 		const crosshairSize = 0.01;
-// 		const horizontalCrosshair = new THREE.Mesh(
-// 			new THREE.PlaneGeometry(crosshairSize * 2, crosshairSize / 2),
-// 			new THREE.MeshBasicMaterial({color: 0xffffff})
-// 		);
-// 		const verticalCrosshair = new THREE.Mesh(new THREE.PlaneGeometry(crosshairSize / 2, crosshairSize * 2), new THREE.MeshBasicMaterial({color: 0xffffff}));
-// 		horizontalCrosshair.position.z = -1;
-// 		verticalCrosshair.position.z = -1;
-
-// 		// Add crosshair parts as child objects of the camera
-// 		camera.add(horizontalCrosshair);
-// 		camera.add(verticalCrosshair);
-// 		scene.add(camera);
-
-// 		const animate = () => {
-// 			requestAnimationFrame(animate);
-
-// 			const currentTime = performance.now();
-// 			const deltaTime = (currentTime - lastTime) / 1000; // Convert to seconds
-// 			lastTime = currentTime;
-
-// 			const quaternion = new THREE.Quaternion();
-// 			quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
-// 			camera.quaternion.copy(quaternion);
-
-// 			// For rotation of the player box
-// 			playerBox.rotation.y = yaw;
-
-// 			const cameraDirection = new THREE.Vector3();
-// 			camera.getWorldDirection(cameraDirection);
-// 			cameraDirection.y = 0;
-// 			cameraDirection.normalize();
-
-// 			// Apply the velocity to player position
-// 			const previousPosition = playerBox.position.clone();
-// 			playerBox.position.add(velocity.clone().multiplyScalar(deltaTime));
-// 			// const previousPosition = playerBox.position.clone();
-
-// 			// Player movement logic
-// 			if (keys.w && !isJumping) {
-// 				velocity.add(camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize().multiplyScalar(acceleration_ground));
-// 			}
-// 			if (keys.s && !isJumping) {
-// 				velocity.add(camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize().multiplyScalar(-acceleration_ground));
-// 			}
-// 			if (keys.a && !isJumping) {
-// 				const left = new THREE.Vector3()
-// 					.crossVectors(camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize(), new THREE.Vector3(0, 1, 0))
-// 					.normalize();
-// 				velocity.add(left.multiplyScalar(-acceleration_ground));
-// 			}
-// 			if (keys.d && !isJumping) {
-// 				const right = new THREE.Vector3()
-// 					.crossVectors(new THREE.Vector3(0, 1, 0), camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize())
-// 					.normalize();
-// 				velocity.add(right.multiplyScalar(-acceleration_ground));
-// 			}
-
-// 			if (keys.space && !isJumping) {
-// 				isJumping = true;
-// 				jumpVelocity = Math.sqrt(jumpHeight * -2 * gravity); // Initial jump velocity
-// 			}
-
-// 			// Apply friction_ground
-// 			if (!isJumping) velocity.multiplyScalar(friction_ground);
-
-// 			// Limit speed to maxSpeed
-// 			if (velocity.length() > maxSpeed && !isJumping) {
-// 				velocity.setLength(maxSpeed);
-// 			}
-
-// 			if (velocity.length() < 0.5) velocity.set(0, 0, 0);
-
-// 			if (isJumping) {
-// 				playerBox.position.y += jumpVelocity * deltaTime; // Move up
-// 				jumpVelocity += gravity * deltaTime; // Apply gravity
-// 				if (playerBox.position.y <= groundLevel + playerHeight / 2) {
-// 					// Check if the player hits the ground
-// 					playerBox.position.y = groundLevel + playerHeight / 2; // Reset to ground level
-// 					isJumping = false; // Reset jump state
-// 					jumpVelocity = 0; // Reset jump velocity
-// 				}
-// 			}
-
-// 			// Collision check for player
-// 			if (checkCollision(playerBox.position)) {
-// 				playerBox.position.copy(previousPosition);
-// 			}
-
-// 			camera.position.set(playerBox.position.x, playerBox.position.y + playerHeight, playerBox.position.z);
-
-// 			// Update bullet positions
-// 			for (let i = bullets.length - 1; i >= 0; i--) {
-// 				const bullet = bullets[i];
-
-// 				// Update bullet position
-// 				bullet.position.add(bullet.direction.clone().multiplyScalar(bullet.speed * deltaTime));
-// 				bullet.distanceTravelled += bullet.speed * deltaTime;
-
-// 				// Check for collisions with cubes using raycasting
-// 				const raycaster = new THREE.Raycaster(bullet.position, bullet.direction.clone().normalize());
-// 				const intersects = raycaster.intersectObjects(obstacles);
-
-// 				// Check if the bullet has intersected with any obstacles
-// 				if (intersects.length > 0 && bullet.distanceTravelled <= 1000) {
-// 					// Only increment score if the bullet hasn't scored yet
-// 					if (!bullet.hasScored) {
-// 						setScore((prevScore) => prevScore + 1); // Increment score
-// 						bullet.hasScored = true; // Mark bullet as having scored
-// 						console.log("Hit");
-// 					}
-
-// 					// Optional: Add visual feedback for a hit
-// 					// bullet.material.color.set(0xff0000); // Change bullet color to red to indicate hit
-// 				}
-
-// 				// Continue rendering the bullet, or remove if it travels more than 1000 units
-// 				if (bullet.distanceTravelled > 1000) {
-// 					scene.remove(bullet);
-// 					bullets.splice(i, 1);
-// 					console.log("Miss");
-// 				}
-// 			}
-
-// 			// Update player speed
-// 			setPlayerSpeed(velocity.length());
-
-// 			renderer.render(scene, camera);
-// 		};
-// 		animate();
-
-// 		// Event listeners for key presses
-// 		const handleKeyDown = (e) => {
-// 			console.log(velocity.length());
-// 			if (e.key === "w") keys.w = true;
-// 			if (e.key === "a") keys.a = true;
-// 			if (e.key === "s") keys.s = true;
-// 			if (e.key === "d") keys.d = true;
-// 			if (e.key === " ") keys.space = true; // Space key for jumping
-// 		};
-
-// 		const handleKeyUp = (e) => {
-// 			if (e.key === "w") keys.w = false;
-// 			if (e.key === "a") keys.a = false;
-// 			if (e.key === "s") keys.s = false;
-// 			if (e.key === "d") keys.d = false;
-// 			if (e.key === " ") keys.space = false; // Reset space key on release
-// 		};
-
-// 		// Enable pointer lock on click
-// 		const enablePointerLock = () => {
-// 			renderer.domElement.requestPointerLock();
-// 		};
-
-// 		const handlePointerLockChange = () => {
-// 			if (document.pointerLockElement === renderer.domElement) {
-// 				document.addEventListener("mousemove", handleMouseMove);
-// 			} else {
-// 				document.removeEventListener("mousemove", handleMouseMove);
-// 			}
-// 		};
-
-// 		renderer.domElement.addEventListener("click", enablePointerLock);
-// 		document.addEventListener("pointerlockchange", handlePointerLockChange);
-// 		window.addEventListener("keydown", handleKeyDown);
-// 		window.addEventListener("keyup", handleKeyUp);
-
-// 		// Function to fire a bullet
-// 		const fireSound = new Audio("/sounds/vandal_1tap.mp3");
-
-// 		const fireBullet = () => {
-// 			const bulletGeometry = new THREE.SphereGeometry(0.1, 16, 16);
-// 			const bulletMaterial = new THREE.MeshStandardMaterial({color: 0xffff00});
-// 			const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
-
-// 			bullet.position.copy(camera.position);
-// 			const bulletDirection = new THREE.Vector3();
-// 			camera.getWorldDirection(bulletDirection);
-// 			bullet.speed = 100;
-
-// 			if ((keys.w && keys.s) || (keys.a && keys.d)) {
-// 				bulletDirection.x += (Math.random() - 0.5) * 0;
-// 				bulletDirection.y += (Math.random() - 0.5) * 0;
-// 				bulletDirection.z += (Math.random() - 0.5) * 0;
-// 			} else if (keys.w || keys.a || keys.s || keys.d) {
-// 				bulletDirection.x += (Math.random() - 0.5) * errorFactor;
-// 				bulletDirection.y += (Math.random() - 0.5) * errorFactor;
-// 				bulletDirection.z += (Math.random() - 0.5) * errorFactor;
-// 			} else {
-// 				bulletDirection.x += (Math.random() - 0.5) * 0;
-// 				bulletDirection.y += (Math.random() - 0.5) * 0;
-// 				bulletDirection.z += (Math.random() - 0.5) * 0;
-// 			}
-
-// 			bulletDirection.normalize();
-// 			bullet.direction = bulletDirection;
-// 			bullet.distanceTravelled = 0;
-// 			bullet.hasScored = false;
-
-// 			scene.add(bullet);
-// 			bullets.push(bullet);
-
-// 			// Play the fire sound
-// 			fireSound.currentTime = 0;
-// 			fireSound.play();
-// 		};
-
-// 		// Add event listener for left mouse clicks
-// 		renderer.domElement.addEventListener("mousedown", (e) => {
-// 			if (e.button === 0) {
-// 				// Left click
-// 				fireBullet();
-// 			}
-// 		});
-
-// 		return () => {
-// 			if (mountRef.current) {
-// 				mountRef.current.removeChild(renderer.domElement);
-// 			}
-// 			window.removeEventListener("keydown", handleKeyDown);
-// 			window.removeEventListener("keyup", handleKeyUp);
-// 			renderer.domElement.removeEventListener("click", enablePointerLock);
-// 			document.removeEventListener("pointerlockchange", handlePointerLockChange);
-// 			document.removeEventListener("mousemove", handleMouseMove);
-// 		};
-// 	}, []);
-
-// 	return (
-// 		<div ref={mountRef}>
-// 			{/* Score Box */}
-// 			<div className="">
-// 				<div style={scoreBoxStyle}>
-// 					Score: {score} <br /> Player speed: {playerSpeed}
-// 				</div>
-// 			</div>
-// 		</div>
-// 	);
-// }
-
-// // Score Box styles
-// const scoreBoxStyle = {
-// 	position: "absolute",
-// 	top: "10px",
-// 	left: "10px",
-// 	color: "white",
-// 	fontSize: "24px",
-// 	zIndex: 10,
-// };
